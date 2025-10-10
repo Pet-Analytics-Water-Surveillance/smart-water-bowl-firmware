@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Version 2.0.0**  
+**Version 1.0.0**  
 *Real-Time Cloud Architecture*
 
 **By Team P.A.W.S.**  
