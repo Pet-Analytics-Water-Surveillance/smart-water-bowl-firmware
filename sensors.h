@@ -1,52 +1,93 @@
 /*
  * Sensor Management
- * Radar presence detection and ultrasonic water level
+ * RD-03 radar presence detection (UART) and ultrasonic water level
  */
 
- #ifndef SENSORS_H
- #define SENSORS_H
- 
- #include "config.h"
- 
- // Global sensor state
- bool motionDetected = false;
- unsigned long lastMotionTime = 0;
- float waterLevelReadings[WATER_READING_SAMPLES] = {0};
- int waterReadIndex = 0;
- 
- void initializeSensors() {
-     Serial.println("Initializing sensors...");
-     
-     pinMode(RD03_OUT, INPUT);
-     pinMode(ULTRASONIC_TRIG, OUTPUT);
-     pinMode(ULTRASONIC_ECHO, INPUT);
-     digitalWrite(ULTRASONIC_TRIG, LOW);
-     
-     Serial.println("✓ Sensors initialized");
- }
- 
- bool checkPresence() {
-     bool currentMotion = digitalRead(RD03_OUT);
-     
-     if (currentMotion) {
-         lastMotionTime = millis();
-         motionDetected = true;
- #ifdef DEBUG_SENSORS
-         if (!motionDetected) {
-             Serial.println("[Radar] Motion detected");
-         }
- #endif
-     } else if (millis() - lastMotionTime > 2000) {
-         if (motionDetected) {
- #ifdef DEBUG_SENSORS
-             Serial.println("[Radar] Motion cleared");
- #endif
-         }
-         motionDetected = false;
-     }
-     
-     return motionDetected;
- }
+#ifndef SENSORS_H
+#define SENSORS_H
+
+#include "config.h"
+
+// RD-03 Radar Serial
+HardwareSerial radarSerial(1);  // Use UART1 for RD-03
+
+// Global sensor state
+bool motionDetected = false;
+unsigned long lastMotionTime = 0;
+int detectedRange = -1;
+float waterLevelReadings[WATER_READING_SAMPLES] = {0};
+int waterReadIndex = 0;
+
+void initializeSensors() {
+    Serial.println("Initializing sensors...");
+    
+    // Initialize RD-03 Radar UART
+    radarSerial.begin(RD03_BAUD_RATE, SERIAL_8N1, RD03_RX_PIN, RD03_TX_PIN);
+    radarSerial.setRxBufferSize(1024);
+    delay(100);
+    
+    // Initialize Ultrasonic sensor
+    pinMode(ULTRASONIC_TRIG, OUTPUT);
+    pinMode(ULTRASONIC_ECHO, INPUT);
+    digitalWrite(ULTRASONIC_TRIG, LOW);
+    
+    Serial.println("✓ Sensors initialized");
+    Serial.println("  - RD-03 Radar on UART1 (115200 baud)");
+    Serial.println("  - Ultrasonic sensor ready");
+}
+
+bool checkPresence() {
+    // Read data from RD-03 radar
+    if (radarSerial.available()) {
+        String radarData = radarSerial.readStringUntil('\n');
+        radarData.trim();
+        
+        // Parse RD-03 output (typical formats: "Range X" or "None")
+        if (radarData.indexOf("Range") >= 0) {
+            // Target detected
+            int rangeStart = radarData.indexOf("Range") + 5;
+            String rangeStr = radarData.substring(rangeStart);
+            detectedRange = rangeStr.toInt();
+            
+            lastMotionTime = millis();
+            if (!motionDetected) {
+#ifdef DEBUG_SENSORS
+                Serial.printf("[RD-03] Target detected at range %d\n", detectedRange);
+#endif
+            }
+            motionDetected = true;
+        } else if (radarData.indexOf("None") >= 0 || radarData.indexOf("none") >= 0) {
+            // No target
+            if (motionDetected) {
+#ifdef DEBUG_SENSORS
+                Serial.println("[RD-03] Target cleared");
+#endif
+            }
+            motionDetected = false;
+            detectedRange = -1;
+        }
+        
+#ifdef DEBUG_SENSORS
+        Serial.print("[RD-03] Raw: ");
+        Serial.println(radarData);
+#endif
+    }
+    
+    // Timeout check - if no data for 2 seconds, consider no motion
+    if (millis() - lastMotionTime > 2000 && motionDetected) {
+        motionDetected = false;
+        detectedRange = -1;
+#ifdef DEBUG_SENSORS
+        Serial.println("[RD-03] Timeout - no motion");
+#endif
+    }
+    
+    return motionDetected;
+}
+
+int getDetectedRange() {
+    return detectedRange;
+}
  
  float measureWaterDistance() {
      digitalWrite(ULTRASONIC_TRIG, LOW);
@@ -119,16 +160,20 @@
      return consumed;
  }
  
- void checkLowWater() {
-     float waterLevel = getFilteredWaterLevel();
-     
-     if (waterLevel > 0 && waterLevel < LOW_WATER_THRESHOLD_CM) {
-         Serial.println("⚠️  Low water level!");
-         
-         digitalWrite(BUZZER, HIGH);
-         delay(100);
-         digitalWrite(BUZZER, LOW);
-     }
- }
+void checkLowWater() {
+    float waterLevel = getFilteredWaterLevel();
+    
+    if (waterLevel > 0 && waterLevel < LOW_WATER_THRESHOLD_CM) {
+        Serial.println("⚠️  Low water level!");
+        
+        // Flash LED to indicate low water
+        for (int i = 0; i < 3; i++) {
+            digitalWrite(STATUS_LED, HIGH);
+            delay(100);
+            digitalWrite(STATUS_LED, LOW);
+            delay(100);
+        }
+    }
+}
  
  #endif // SENSORS_H

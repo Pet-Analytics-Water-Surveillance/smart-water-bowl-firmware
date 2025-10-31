@@ -10,17 +10,25 @@
  // ===== FIRMWARE VERSION =====
  #define FIRMWARE_VERSION "2.0.0"
  
- // ===== PIN DEFINITIONS =====
- #define RD03_OUT          3
- #define ULTRASONIC_TRIG   1
- #define ULTRASONIC_ECHO   2
- #define STATUS_LED        8
- #define BUZZER            9
- #define PUMP_RELAY        10
- 
- // I2C pins (shared by AI Vision V2)
- #define I2C_SDA           5
- #define I2C_SCL           6
+// ===== PIN DEFINITIONS =====
+// RD-03 Radar Sensor (UART Communication)
+#define RD03_RX_PIN       7      // ESP32 RX ← RD-03 TX
+#define RD03_TX_PIN       8      // ESP32 TX → RD-03 RX
+#define RD03_BAUD_RATE    115200 // RD-03 default baud rate
+
+// Ultrasonic Water Level Sensor
+#define ULTRASONIC_TRIG   1      // Trigger pin (TX)
+#define ULTRASONIC_ECHO   2      // Echo pin (RX)
+
+// Status LED
+#define STATUS_LED        9      // Visual status indicator
+
+// Pump Control
+#define PUMP_RELAY        10     // Relay control for water pump
+
+// I2C pins (Grove AI Vision V2)
+#define I2C_SDA           5      // I2C Data line
+#define I2C_SCL           6      // I2C Clock line
  
  // ===== HARDWARE CONFIGURATION =====
  #define TANK_HEIGHT_CM    25.0

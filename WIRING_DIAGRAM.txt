@@ -1,0 +1,190 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    SMART PET BOWL - WIRING DIAGRAM                           ║
+║                         ESP32-C3 Based System                                ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  COMPONENT 1: Grove AI Vision V2 (I2C @ 400kHz)                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    Grove AI Vision V2              ESP32-C3
+    ┌──────────────┐               ┌──────────┐
+    │              │               │          │
+    │  VCC (3.3V) ●├───────────────┤● 3.3V    │
+    │         GND ●├───────────────┤● GND     │
+    │         SDA ●├───────────────┤● Pin 5   │ (I2C Data)
+    │         SCL ●├───────────────┤● Pin 6   │ (I2C Clock)
+    │              │               │          │
+    └──────────────┘               └──────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  COMPONENT 2: RD-03 Radar Sensor (UART @ 115200 baud) ⚠️ CRITICAL!         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    RD-03 Radar Sensor             ESP32-C3
+    ┌──────────────┐               ┌──────────┐
+    │              │               │          │
+    │    VCC (5V) ●├───────────────┤● 5V      │ ⚠️ 5V Required!
+    │         GND ●├───────────────┤● GND     │
+    │         TXD ●├───────╲        │          │
+    │              │        ╲───────┤● Pin 7   │ (ESP32 RX) ⚠️ Cross-connect!
+    │              │         ╱──────┤● Pin 8   │ (ESP32 TX) ⚠️ Cross-connect!
+    │         RXD ●├───────╱        │          │
+    │              │               │          │
+    └──────────────┘               └──────────┘
+    
+    ⚠️ IMPORTANT NOTES:
+    - RD-03 TXD → ESP32 Pin 7 (RX)  [Cross-connection!]
+    - RD-03 RXD → ESP32 Pin 8 (TX)  [Cross-connection!]
+    - Must use 5V power supply (not 3.3V)
+    - Baud rate: 115200
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  COMPONENT 3: Ultrasonic Sensor (HC-SR04 or similar)                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    Ultrasonic Sensor              ESP32-C3
+    ┌──────────────┐               ┌──────────┐
+    │              │               │          │
+    │         VCC ●├───────────────┤● 5V/3.3V │ (Check sensor specs)
+    │         GND ●├───────────────┤● GND     │
+    │        TRIG ●├───────────────┤● Pin 1   │ (Trigger output)
+    │        ECHO ●├───────────────┤● Pin 2   │ (Echo input)
+    │              │               │          │
+    └──────────────┘               └──────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  COMPONENT 4: Status LED                                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    LED Circuit                    ESP32-C3
+                                   ┌──────────┐
+                                   │          │
+    ┌──────┐      ┌─────────┐     │          │
+    │      │      │ Resistor│     │          │
+    │ LED ●├──────┤ 220-1kΩ ├─────┤● Pin 9   │ (Anode/+)
+    │      │      └─────────┘     │          │
+    └───●──┘                      │          │
+        │                         │          │
+        └─────────────────────────┤● GND     │ (Cathode/-)
+                                   │          │
+                                   └──────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  COMPONENT 5: Pump Relay Module                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    Relay Module                   ESP32-C3
+    ┌──────────────┐               ┌──────────┐
+    │              │               │          │
+    │         VCC ●├───────────────┤● 5V/3.3V │ (Check module specs)
+    │         GND ●├───────────────┤● GND     │
+    │          IN ●├───────────────┤● Pin 10  │ (Control signal)
+    │              │               │          │
+    │   COM  NC  NO│               │          │
+    │    ●    ●   ●│               │          │
+    │    └────┼───┘│               │          │
+    │    Connect   │               │          │
+    │    to Pump   │               │          │
+    └──────────────┘               └──────────┘
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                        COMPLETE PIN ASSIGNMENT                               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+    ESP32 Pin           Function                    Component
+    ─────────────────────────────────────────────────────────────────────
+    Pin 1               ULTRASONIC_TRIG             Ultrasonic Trigger
+    Pin 2               ULTRASONIC_ECHO             Ultrasonic Echo
+    Pin 5               I2C_SDA                     Grove AI Vision (Data)
+    Pin 6               I2C_SCL                     Grove AI Vision (Clock)
+    Pin 7               RD03_RX (UART1)             RD-03 TX (receive)
+    Pin 8               RD03_TX (UART1)             RD-03 RX (transmit)
+    Pin 9               STATUS_LED                  LED Indicator
+    Pin 10              PUMP_RELAY                  Relay Control
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                             POWER REQUIREMENTS                               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+    Component                   Voltage         Current         Notes
+    ─────────────────────────────────────────────────────────────────────
+    ESP32-C3                    3.3V/5V         ~200mA          Via USB or VIN
+    Grove AI Vision V2          3.3V            ~150mA          From ESP32 3.3V
+    RD-03 Radar                 5V ⚠️           ~100mA          MUST use 5V!
+    Ultrasonic Sensor           5V/3.3V         ~15mA           Check specs
+    Status LED                  3.3V            ~20mA           With resistor
+    Relay Module                5V/3.3V         ~50mA           Check module
+    
+    Total Estimated Current: ~535mA @ 5V (without pump motor)
+    
+    ⚠️ Recommended Power Supply: 5V @ 1A or higher
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                          COMMON WIRING MISTAKES                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+    ❌ WRONG: RD-03 TX → ESP32 Pin 8 (TX)
+    ✅ RIGHT: RD-03 TX → ESP32 Pin 7 (RX)  [Cross-connect!]
+    
+    ❌ WRONG: RD-03 RX → ESP32 Pin 7 (RX)
+    ✅ RIGHT: RD-03 RX → ESP32 Pin 8 (TX)  [Cross-connect!]
+    
+    ❌ WRONG: RD-03 powered from 3.3V
+    ✅ RIGHT: RD-03 powered from 5V
+    
+    ❌ WRONG: LED connected directly to GPIO (no resistor)
+    ✅ RIGHT: LED with 220Ω-1kΩ resistor in series
+    
+    ❌ WRONG: Treating RD-03 as digital pin (digitalRead)
+    ✅ RIGHT: RD-03 uses UART at 115200 baud
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                         TESTING CHECKLIST                                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+    Before connecting to ESP32:
+    ☐ Double-check all connections against this diagram
+    ☐ Verify 5V components are on 5V rail
+    ☐ Verify 3.3V components are on 3.3V rail
+    ☐ Check for short circuits with multimeter
+    ☐ Verify LED polarity and resistor
+    
+    After connecting to ESP32:
+    ☐ Upload hardware_test.ino
+    ☐ Open Serial Monitor (115200 baud)
+    ☐ Verify all tests pass
+    ☐ Check RD-03 UART output in Serial Monitor
+    ☐ Test motion detection by waving hand
+    ☐ Verify ultrasonic readings are reasonable
+    
+    Ready for main firmware:
+    ☐ All hardware tests passed
+    ☐ RD-03 showing "Range X" or "None" frames
+    ☐ I2C device detected for Grove AI Vision
+    ☐ LED blinks correctly
+    ☐ Relay clicks when activated
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    NEED HELP? CHECK THESE FILES:                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+    - HARDWARE_TEST_GUIDE.md       Step-by-step testing instructions
+    - RD03_INTEGRATION_GUIDE.md    RD-03 technical details
+    - PIN_CONFIGURATION_SUMMARY.md Quick pin reference
+    - CHANGES_SUMMARY.md           What changed in this update
+    - README.md                    Overall system documentation
+
+═════════════════════════════════════════════════════════════════════════════════
+                  Smart Pet Bowl Firmware v2.0 - Pin Configuration Updated
+═════════════════════════════════════════════════════════════════════════════════
+

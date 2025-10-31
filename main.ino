@@ -87,18 +87,17 @@
      Serial.println();
  }
  
- void initializePins() {
-     pinMode(STATUS_LED, OUTPUT);
-     pinMode(BUZZER, OUTPUT);
-     pinMode(PUMP_RELAY, OUTPUT);
-     pinMode(RD03_OUT, INPUT);
-     pinMode(ULTRASONIC_TRIG, OUTPUT);
-     pinMode(ULTRASONIC_ECHO, INPUT);
-     
-     digitalWrite(STATUS_LED, HIGH);
-     digitalWrite(BUZZER, LOW);
-     digitalWrite(PUMP_RELAY, LOW);
- }
+void initializePins() {
+    pinMode(STATUS_LED, OUTPUT);
+    pinMode(PUMP_RELAY, OUTPUT);
+    pinMode(ULTRASONIC_TRIG, OUTPUT);
+    pinMode(ULTRASONIC_ECHO, INPUT);
+    
+    digitalWrite(STATUS_LED, HIGH);
+    digitalWrite(PUMP_RELAY, LOW);
+    
+    // Note: RD-03 uses hardware serial (UART1), initialized in sensors.h
+}
  
  void blinkSuccess() {
      for (int i = 0; i < 3; i++) {

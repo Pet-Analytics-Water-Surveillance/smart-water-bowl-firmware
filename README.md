@@ -40,25 +40,35 @@ This firmware powers the **Smart Pet Bowl** - an intelligent IoT pet water fount
 
 | Component | Model/Type | Purpose |
 |-----------|------------|---------|
-| AI Vision Camera | Seeed SSCMA (YOLOv5) | Pet detection & image capture |
-| Radar Sensor | RD-03 | Presence detection |
+| AI Vision Camera | Seeed Grove AI Vision V2 (YOLOv5) | Pet detection & image capture |
+| Radar Sensor | Ai-Thinker RD-03 (24GHz FMCW) | Presence detection via UART |
 | Ultrasonic Sensor | HC-SR04 or similar | Water level measurement |
 | Status LED | Any standard LED | System status indication |
-| Buzzer | Piezo buzzer | Low water alerts |
 | Pump Relay | 5V relay module | Water fountain control |
 
 ### Pin Configuration
 
 ```cpp
-RD03_OUT          = GPIO 3   // Radar output
-ULTRASONIC_TRIG   = GPIO 1   // Ultrasonic trigger
-ULTRASONIC_ECHO   = GPIO 2   // Ultrasonic echo
-STATUS_LED        = GPIO 8   // Status LED
-BUZZER            = GPIO 9   // Buzzer
-PUMP_RELAY        = GPIO 10  // Pump relay
-I2C_SDA           = GPIO 5   // I2C data (AI camera)
-I2C_SCL           = GPIO 6   // I2C clock (AI camera)
+// RD-03 Radar (UART @ 115200 baud)
+RD03_RX_PIN      = GPIO 7   // ESP32 RX ← RD-03 TX
+RD03_TX_PIN      = GPIO 8   // ESP32 TX → RD-03 RX
+
+// Ultrasonic Water Level
+ULTRASONIC_TRIG  = GPIO 1   // Ultrasonic trigger
+ULTRASONIC_ECHO  = GPIO 2   // Ultrasonic echo
+
+// Status Indicator
+STATUS_LED       = GPIO 9   // Status LED
+
+// Pump Control
+PUMP_RELAY       = GPIO 10  // Pump relay
+
+// I2C (Grove AI Vision V2)
+I2C_SDA          = GPIO 5   // I2C data (AI camera)
+I2C_SCL          = GPIO 6   // I2C clock (AI camera)
 ```
+
+**⚠️ Important**: RD-03 uses UART communication (not a simple digital pin). See `RD03_INTEGRATION_GUIDE.md` for details.
 
 ---
 
