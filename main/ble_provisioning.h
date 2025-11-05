@@ -241,9 +241,15 @@ void startBLEProvisioning() {
      
      // Blink LED to indicate provisioning mode
      unsigned long startTime = millis();
+     unsigned long lastBlink = millis();
      while (!provisioningComplete && (millis() - startTime < BLE_TIMEOUT_MS)) {
-         digitalWrite(STATUS_LED, !digitalRead(STATUS_LED));
-         delay(500);
+         // Non-blocking LED blink
+         if (millis() - lastBlink >= 500) {
+             digitalWrite(STATUS_LED, !digitalRead(STATUS_LED));
+             lastBlink = millis();
+         }
+         // Yield to allow BLE stack to process events
+         delay(10);
      }
      
      // Turn off LED
