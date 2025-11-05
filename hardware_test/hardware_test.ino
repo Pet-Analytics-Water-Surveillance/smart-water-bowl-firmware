@@ -11,25 +11,25 @@
  */
 
 #include <Wire.h>
-#include <Seeed_Arduino_GroveAI.h>
+#include <Seeed_Arduino_SSCMA.h>
 
 // ===== PIN DEFINITIONS (Updated - RD-03 is UART) =====
-#define RD03_RX_PIN       7      // ESP32 RX ← RD-03 TX
-#define RD03_TX_PIN       8      // ESP32 TX → RD-03 RX
+#define RD03_RX_PIN       44      // ESP32 RX ← RD-03 TX
+#define RD03_TX_PIN       43      // ESP32 TX → RD-03 RX
 #define RD03_BAUD_RATE    115200 // RD-03 default baud rate
 
 #define ULTRASONIC_TRIG   1      // Ultrasonic trigger (TX)
 #define ULTRASONIC_ECHO   2      // Ultrasonic echo (RX)
-#define STATUS_LED        9      // Status LED
-#define PUMP_RELAY        10     // Pump relay control
+#define STATUS_LED        7      // Status LED
+#define PUMP_RELAY        8     // Pump relay control
 #define I2C_SDA           5      // I2C Data (Grove AI Vision)
 #define I2C_SCL           6      // I2C Clock (Grove AI Vision)
 
 // Hardware Serial for RD-03
 HardwareSerial radarSerial(1);
 
-// Grove AI Vision instance
-GroveAI ai(Wire);
+// Grove AI Vision V2 instance (SSCMA)
+SSCMA AI;
 
 // Test results
 bool i2cTest = false;
@@ -44,6 +44,13 @@ void setup() {
     
     printHeader();
     
+    // Initialize I2C FIRST - like pet_fountain does
+    Serial.println("[INIT] Initializing I2C bus...");
+    Wire.begin(I2C_SDA, I2C_SCL);
+    Wire.setClock(100000);
+    delay(500);  // Give I2C time to stabilize
+    Serial.println("  ✓ I2C bus ready\n");
+    
     // Initialize pins
     pinMode(STATUS_LED, OUTPUT);
     pinMode(PUMP_RELAY, OUTPUT);
@@ -55,7 +62,7 @@ void setup() {
     digitalWrite(PUMP_RELAY, LOW);
     digitalWrite(ULTRASONIC_TRIG, LOW);
     
-    Serial.println("\n🔧 Starting Hardware Tests...\n");
+    Serial.println("🔧 Starting Hardware Tests...\n");
     delay(1000);
     
     // Run all tests
@@ -79,30 +86,65 @@ void setup() {
 }
 
 void loop() {
-    // Continuous monitoring mode
-    Serial.println("\n========== CONTINUOUS MONITORING ==========");
+    static unsigned long lastStatusPrint = 0;
+    static int cycleCount = 0;
     
-    // Check radar via UART
-    if (radarSerial.available()) {
-        String radarData = radarSerial.readStringUntil('\n');
-        radarData.trim();
-        Serial.print("RD-03 Data: ");
-        Serial.println(radarData);
+    // Print status every 3 seconds
+    if (millis() - lastStatusPrint > 3000) {
+        Serial.println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Serial.printf("[MONITORING CYCLE #%d]\n", ++cycleCount);
+        Serial.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         
-        if (radarData.indexOf("Range") >= 0) {
-            digitalWrite(STATUS_LED, HIGH);
-            delay(100);
-            digitalWrite(STATUS_LED, LOW);
+        // Check RD-03 radar
+        bool motionDetected = false;
+        if (radarSerial.available()) {
+            String radarData = radarSerial.readStringUntil('\n');
+            radarData.trim();
+            if (radarData.length() > 0) {
+                Serial.print("  RD-03: ");
+                Serial.println(radarData);
+                if (radarData.indexOf("Range") >= 0) {
+                    motionDetected = true;
+                    blinkLED(1, 100);
+                }
+            }
+        } else {
+            Serial.println("  RD-03: No data");
         }
+        
+        // Check ultrasonic water level
+        float distance = measureDistance();
+        Serial.print("  Water Level: ");
+        if (distance > 0) {
+            Serial.print(distance);
+            Serial.println(" cm");
+        } else {
+            Serial.println("ERROR (timeout)");
+        }
+        
+        // AI detection status
+        if (motionDetected) {
+            Serial.println("  AI: Motion detected, checking...");
+            if (!AI.invoke()) {
+                if (AI.boxes().size() > 0) {
+                    auto box = AI.boxes()[0];
+                    Serial.printf("  AI: Pet detected! Target=%d, Score=%d%%\n", box.target, box.score);
+                    blinkLED(2, 150);
+                } else {
+                    Serial.println("  AI: No pet detected");
+                }
+            }
+        }
+        
+        // Memory status
+        Serial.printf("  Free Heap: %d KB\n", ESP.getFreeHeap() / 1024);
+        
+        Serial.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+        
+        lastStatusPrint = millis();
     }
     
-    // Check ultrasonic
-    float distance = measureDistance();
-    Serial.print("Water Distance: ");
-    Serial.print(distance);
-    Serial.println(" cm");
-    
-    delay(2000);
+    delay(100);
 }
 
 void printHeader() {
@@ -115,73 +157,97 @@ void printHeader() {
     Serial.println();
     Serial.println("Pin Configuration:");
     Serial.println("  - Grove AI Vision: SDA=5, SCL=6");
-    Serial.println("  - Status LED: Pin 9");
-    Serial.println("  - RD-03 Radar: RX=7, TX=8 (UART @ 115200)");
+    Serial.println("  - Status LED: Pin 7");
+    Serial.println("  - RD-03 Radar: RX=44, TX=43 (UART @ 115200)");
     Serial.println("  - Ultrasonic: TRIG=1, ECHO=2");
-    Serial.println("  - Pump Relay: Pin 10");
+    Serial.println("  - Pump Relay: Pin 8");
     Serial.println();
 }
 
 void testI2C() {
     Serial.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    Serial.println("TEST 1: I2C Communication (Grove AI Vision)");
+    Serial.println("TEST 1: Grove AI Vision V2");
     Serial.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     
-    // Initialize I2C with custom pins
-    Wire.begin(I2C_SDA, I2C_SCL);
-    delay(100);
+    // Initialize AI Vision - I2C already initialized in setup()
+    Serial.println("[INIT] Initializing AI Vision V2...");
     
-    Serial.println("Scanning I2C bus...");
-    byte error, address;
-    int deviceCount = 0;
-    
-    for (address = 1; address < 127; address++) {
-        Wire.beginTransmission(address);
-        error = Wire.endTransmission();
-        
-        if (error == 0) {
-            Serial.print("  ✓ I2C device found at address 0x");
-            if (address < 16) Serial.print("0");
-            Serial.println(address, HEX);
-            deviceCount++;
-        }
-    }
-    
-    if (deviceCount > 0) {
-        Serial.print("\n✓ Found ");
-        Serial.print(deviceCount);
-        Serial.println(" I2C device(s)");
+    // Initialize AI Vision
+    if (AI.begin()) {
+        Serial.println("  ✓ AI Vision V2 initialized");
+        Serial.println("  ✓ Pet detection model loaded");
+        Serial.println("[INIT] AI Vision ready");
         i2cTest = true;
         
-        // Try to initialize Grove AI Vision
-        Serial.println("\nInitializing Grove AI Vision...");
-        if (ai.begin(ALGO_OBJECT_DETECTION, MODEL_EXT_INDEX_1)) {
-            Serial.println("✓ Grove AI Vision initialized successfully!");
-        } else {
-            Serial.println("⚠ Grove AI Vision initialization failed (may need model upload)");
+        // Test detection capability
+        Serial.println("\n[TEST] Testing object detection (wave hand in front)...");
+        delay(1000);
+        
+        int detectionAttempts = 0;
+        int successfulDetections = 0;
+        
+        for (int i = 0; i < 5; i++) {
+            detectionAttempts++;
+            int invokeStatus = AI.invoke();
+            
+            if (invokeStatus == 0) {
+                if (AI.boxes().size() > 0) {
+                    successfulDetections++;
+                    auto box = AI.boxes()[0];
+                    Serial.printf("[AI] Object detected - Target=%d, Score=%d%%\n", 
+                                 box.target, box.score);
+                } else {
+                    Serial.printf("[%d] No objects detected\n", i+1);
+                }
+            } else {
+                Serial.printf("[%d] Invoke failed (status=%d)\n", i+1, invokeStatus);
+            }
+            delay(500);
         }
+        
+        Serial.printf("\n✓ Detection test complete: %d/%d successful\n", 
+                     successfulDetections, detectionAttempts);
+        
     } else {
-        Serial.println("\n✗ No I2C devices found!");
-        Serial.println("  Check SDA/SCL connections to pins 5 and 6");
+        Serial.println("[ERROR] AI Vision V2 initialization failed!");
+        Serial.println("[ERROR] Check I2C connections (SDA=GPIO5, SCL=GPIO6)");
         i2cTest = false;
+        
+        // Now try I2C scan to diagnose
+        Serial.println("\n[DEBUG] Running I2C scan for diagnostics...");
+        byte error, address;
+        int deviceCount = 0;
+        
+        for (address = 1; address < 127; address++) {
+            Wire.beginTransmission(address);
+            error = Wire.endTransmission();
+            
+            if (error == 0) {
+                Serial.print("  Found I2C device at 0x");
+                if (address < 16) Serial.print("0");
+                Serial.println(address, HEX);
+                deviceCount++;
+            }
+        }
+        
+        if (deviceCount == 0) {
+            Serial.println("  ✗ No I2C devices found - check wiring!");
+        } else {
+            Serial.printf("  Found %d device(s) but AI init failed\n", deviceCount);
+            Serial.println("  → Grove AI may need firmware/model upload");
+        }
     }
 }
 
 void testLED() {
     Serial.println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    Serial.println("TEST 2: Status LED (Pin 9)");
+    Serial.println("TEST 2: Status LED (Pin 7)");
     Serial.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     
     Serial.println("Blinking LED 5 times...");
+    Serial.println("  Watch for 5 blinks on GPIO7");
     
-    for (int i = 0; i < 5; i++) {
-        digitalWrite(STATUS_LED, HIGH);
-        Serial.print("  ON  ");
-        delay(300);
-        digitalWrite(STATUS_LED, LOW);
-        Serial.println("OFF");
-        delay(300);
-    }
+    blinkLED(5, 300);
     
     Serial.println("\n✓ LED test complete");
     Serial.println("  Did you see the LED blink 5 times? [Manual verification required]");
@@ -230,8 +296,8 @@ void testRadarUART() {
                 // Check for motion detection
                 if (radarData.indexOf("Range") >= 0) {
                     motionDetected = true;
-                    digitalWrite(STATUS_LED, HIGH);
                     Serial.println("    ✓ MOTION DETECTED!");
+                    blinkLED(1, 100);
                 } else if (radarData.indexOf("None") >= 0 || radarData.indexOf("none") >= 0) {
                     digitalWrite(STATUS_LED, LOW);
                 }
@@ -269,6 +335,23 @@ void testUltrasonic() {
     Serial.println("TEST 4: Ultrasonic Sensor (Pins 1 & 2)");
     Serial.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     
+    Serial.println("Testing ultrasonic sensor...");
+    Serial.printf("  TRIG Pin: GPIO%d\n", ULTRASONIC_TRIG);
+    Serial.printf("  ECHO Pin: GPIO%d\n", ULTRASONIC_ECHO);
+    Serial.println("  Sensor should be connected to 5V or 3.3V");
+    Serial.println();
+    
+    // Test pin state
+    Serial.println("Testing pin states:");
+    digitalWrite(ULTRASONIC_TRIG, HIGH);
+    delay(10);
+    Serial.printf("  TRIG HIGH: %d\n", digitalRead(ULTRASONIC_TRIG));
+    digitalWrite(ULTRASONIC_TRIG, LOW);
+    delay(10);
+    Serial.printf("  TRIG LOW: %d\n", digitalRead(ULTRASONIC_TRIG));
+    Serial.printf("  ECHO state: %d\n", digitalRead(ULTRASONIC_ECHO));
+    Serial.println();
+    
     Serial.println("Taking 10 distance readings...");
     Serial.println();
     
@@ -287,11 +370,14 @@ void testUltrasonic() {
             Serial.println(" cm ✓");
             validReadings++;
             totalDistance += distance;
+        } else if (distance == -1) {
+            Serial.println("TIMEOUT ✗ (no echo received)");
         } else {
-            Serial.println("Invalid ✗");
+            Serial.print(distance);
+            Serial.println(" cm (out of range) ✗");
         }
         
-        delay(200);
+        delay(500);  // Increased delay between readings
     }
     
     Serial.println();
@@ -304,14 +390,23 @@ void testUltrasonic() {
         ultrasonicTest = true;
     } else {
         Serial.println("✗ Too many invalid readings");
-        Serial.println("  Check ultrasonic connections to pins 1 (TRIG) and 2 (ECHO)");
+        Serial.println("\n  Troubleshooting:");
+        Serial.println("  1. Check wiring:");
+        Serial.println("     - VCC → 5V (or 3.3V depending on sensor)");
+        Serial.println("     - GND → GND");
+        Serial.println("     - TRIG → GPIO1");
+        Serial.println("     - ECHO → GPIO2");
+        Serial.println("  2. Ensure sensor is powered (LED on some models)");
+        Serial.println("  3. Point sensor at an object 5-200cm away");
+        Serial.println("  4. Some sensors need 5V to work properly");
+        Serial.println("  5. Try a different ultrasonic sensor if available");
         ultrasonicTest = false;
     }
 }
 
 void testPumpRelay() {
     Serial.println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    Serial.println("TEST 5: Pump Relay (Pin 10)");
+    Serial.println("TEST 5: Pump Relay (Pin 8)");
     Serial.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     
     Serial.println("⚠ WARNING: Ensure pump is properly connected!");
@@ -335,6 +430,7 @@ void testPumpRelay() {
 }
 
 float measureDistance() {
+    // EXACTLY like working pet_fountain sensors.h
     digitalWrite(ULTRASONIC_TRIG, LOW);
     delayMicroseconds(2);
     digitalWrite(ULTRASONIC_TRIG, HIGH);
@@ -347,7 +443,19 @@ float measureDistance() {
         return -1;
     }
     
-    return duration * 0.034 / 2;
+    float distance = duration * 0.034 / 2;
+    
+    return distance;
+}
+
+// Helper function for LED feedback (from working firmware)
+void blinkLED(int times, int delayMs) {
+    for (int i = 0; i < times; i++) {
+        digitalWrite(STATUS_LED, HIGH);
+        delay(delayMs);
+        digitalWrite(STATUS_LED, LOW);
+        delay(delayMs);
+    }
 }
 
 void printResults() {
@@ -381,18 +489,16 @@ void printResults() {
         Serial.println("   Your hardware is ready for main firmware.");
         
         // Victory blink
-        for (int i = 0; i < 5; i++) {
-            digitalWrite(STATUS_LED, HIGH);
-            delay(100);
-            digitalWrite(STATUS_LED, LOW);
-            delay(100);
-        }
+        blinkLED(5, 100);
     } else {
         Serial.println("⚠ SOME TESTS FAILED");
         Serial.print("   Passed: ");
         Serial.print(passCount);
         Serial.println("/5");
         Serial.println("   Review connections and try again.");
+        
+        // Error pattern
+        blinkLED(3, 300);
     }
     
     Serial.println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");

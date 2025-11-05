@@ -50,18 +50,18 @@ This firmware powers the **Smart Pet Bowl** - an intelligent IoT pet water fount
 
 ```cpp
 // RD-03 Radar (UART @ 115200 baud)
-RD03_RX_PIN      = GPIO 7   // ESP32 RX ← RD-03 TX
-RD03_TX_PIN      = GPIO 8   // ESP32 TX → RD-03 RX
+RD03_RX_PIN      = GPIO 44  // ESP32 RX ← RD-03 TX
+RD03_TX_PIN      = GPIO 43  // ESP32 TX → RD-03 RX
 
 // Ultrasonic Water Level
 ULTRASONIC_TRIG  = GPIO 1   // Ultrasonic trigger
 ULTRASONIC_ECHO  = GPIO 2   // Ultrasonic echo
 
 // Status Indicator
-STATUS_LED       = GPIO 9   // Status LED
+STATUS_LED       = GPIO 7   // Status LED
 
 // Pump Control
-PUMP_RELAY       = GPIO 10  // Pump relay
+PUMP_RELAY       = GPIO 8   // Pump relay
 
 // I2C (Grove AI Vision V2)
 I2C_SDA          = GPIO 5   // I2C data (AI camera)

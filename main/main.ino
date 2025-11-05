@@ -1,5 +1,5 @@
 /*
- * Smart Pet Fountain - Main Entry Point
+ * Smart Pet Fountain - Main Entry Point (Updated for RD-03 UART)
  * 
  * Cloud-First Architecture v2.0
  * - BLE provisioning on first boot only
@@ -25,7 +25,7 @@
      
      printWelcome();
      
-     // Initialize hardware pins
+     // Initialize hardware pins FIRST
      initializePins();
      
      // Check if device is provisioned
@@ -48,8 +48,10 @@
      // Normal operation mode
      Serial.println("\n✓ Device provisioned - entering normal operation\n");
      
-     // Initialize subsystems
+     // Initialize subsystems in correct order
      initializeStorage();
+     
+     // Initialize I2C and AI Vision (I2C init happens inside initializeAIVision)
      initializeAIVision();
      
      // Connect to WiFi
@@ -62,7 +64,7 @@
      // Sync reference images from cloud
      syncReferenceImages();
      
-     // Initialize sensors
+     // Initialize sensors (RD-03 UART and ultrasonic)
      initializeSensors();
      
      // Create FreeRTOS tasks for concurrent operation
@@ -83,20 +85,36 @@
      Serial.println("╔═══════════════════════════════════════════╗");
      Serial.println("║   SMART PET FOUNTAIN v2.0                ║");
      Serial.println("║   Real-Time Cloud Architecture           ║");
+     Serial.println("║   RD-03 UART Mode                        ║");
      Serial.println("╚═══════════════════════════════════════════╝");
+     Serial.println();
+     Serial.println("Pin Configuration:");
+     Serial.println("  - Grove AI Vision: SDA=5, SCL=6");
+     Serial.println("  - Status LED: Pin 7");
+     Serial.println("  - RD-03 Radar: RX=44, TX=43 (UART @ 115200)");
+     Serial.println("  - Ultrasonic: TRIG=1, ECHO=2");
+     Serial.println("  - Pump Relay: Pin 8");
      Serial.println();
  }
  
 void initializePins() {
+    Serial.println("[INIT] Initializing hardware pins...");
+    
+    // Initialize GPIO pins
     pinMode(STATUS_LED, OUTPUT);
     pinMode(PUMP_RELAY, OUTPUT);
     pinMode(ULTRASONIC_TRIG, OUTPUT);
     pinMode(ULTRASONIC_ECHO, INPUT);
     
-    digitalWrite(STATUS_LED, HIGH);
-    digitalWrite(PUMP_RELAY, LOW);
+    // Set safe initial states
+    digitalWrite(STATUS_LED, HIGH);  // LED on during initialization
+    digitalWrite(PUMP_RELAY, LOW);   // Pump off
+    digitalWrite(ULTRASONIC_TRIG, LOW);
     
-    // Note: RD-03 uses hardware serial (UART1), initialized in sensors.h
+    Serial.println("  ✓ GPIO pins initialized");
+    
+    // Note: I2C initialized in initializeAIVision()
+    // Note: RD-03 UART initialized in initializeSensors()
 }
  
  void blinkSuccess() {
