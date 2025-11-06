@@ -47,13 +47,20 @@
  // ===== MEMORY ALLOCATION =====
  #define JPEG_BUFFER_SIZE 30000     // 30KB for captured images
  
- // ===== BLE SERVICE UUIDs =====
- // These UUIDs are standard across all devices
- #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
- #define WIFI_CHAR_UUID      "beb5483e-36e1-4688-b7f5-ea07361b26a8"
- #define SUPABASE_CHAR_UUID  "1c95d5e3-d8f7-413a-bf3d-7a2e5d7be87e"
- #define USER_CHAR_UUID      "9a8ca5ed-2b1f-4b5e-9c3d-5e8f7a9d4c3b"
- #define STATUS_CHAR_UUID    "7d4c3b2a-1e9f-4a5b-8c7d-6e5f4a3b2c1d"
+// ===== BLE CONFIGURATION =====
+// NimBLE buffer configuration to prevent GATT_INSUF_RESOURCE errors
+#define CONFIG_NIMBLE_ATT_PREFERRED_MTU 512
+#define CONFIG_NIMBLE_L2CAP_COC_MAX_NUM 0
+#define CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU 512
+#define CONFIG_BT_NIMBLE_MAX_CONNECTIONS 1
+
+// ===== BLE SERVICE UUIDs =====
+// These UUIDs are standard across all devices
+#define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define WIFI_CHAR_UUID      "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define SUPABASE_CHAR_UUID  "1c95d5e3-d8f7-413a-bf3d-7a2e5d7be87e"
+#define USER_CHAR_UUID      "9a8ca5ed-2b1f-4b5e-9c3d-5e8f7a9d4c3b"
+#define STATUS_CHAR_UUID    "7d4c3b2a-1e9f-4a5b-8c7d-6e5f4a3b2c1d"
  
  // ===== TIMING CONFIGURATION =====
  #define PRESENCE_TIMEOUT_MS     5000   // Max wait for pet detection

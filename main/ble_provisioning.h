@@ -13,12 +13,58 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include "config.h"
+
+extern "C" {
+    #include "mbedtls/base64.h"
+}
+
+// Base64 decode using ESP32 mbedTLS crypto library
+String base64_decode(const char* input) {
+    size_t input_len = strlen(input);
+    size_t output_len = (input_len * 3) / 4;  // Max output size
+    unsigned char* output = (unsigned char*)malloc(output_len + 1);  // +1 for null terminator
+    
+    if (!output) {
+        Serial.println("❌ Failed to allocate memory for Base64 decode");
+        return String("");
+    }
+    
+    size_t actual_output_len = 0;
+    int ret = mbedtls_base64_decode(output, output_len, &actual_output_len, 
+                                    (const unsigned char*)input, input_len);
+    
+    String result = "";
+    if (ret == 0 && actual_output_len > 0) {
+        output[actual_output_len] = '\0';  // Null terminate
+        result = String((char*)output);
+    } else {
+        Serial.printf("❌ Base64 decode failed with error: %d (input_len: %d)\n", ret, input_len);
+    }
+    
+    free(output);
+    return result;
+}
  
- // Global BLE objects
- NimBLEServer* pServer = nullptr;
- NimBLECharacteristic* pStatusChar = nullptr;
- bool bleConnected = false;
- bool provisioningComplete = false;
+// Forward declare callback classes
+class ServerCallbacks;
+class WiFiCharCallbacks;
+class SupabaseCharCallbacks;
+class UserCharCallbacks;
+
+// Global BLE objects
+NimBLEServer* pServer = nullptr;
+NimBLECharacteristic* pStatusChar = nullptr;
+NimBLECharacteristic* pWiFiChar = nullptr;      // Store for manual checking
+NimBLECharacteristic* pSupabaseChar = nullptr; // Store for manual checking
+NimBLECharacteristic* pUserChar = nullptr;     // Store for manual checking
+bool bleConnected = false;
+bool provisioningComplete = false;
+
+// Static callback instances that persist
+ServerCallbacks* serverCallbacks = nullptr;
+WiFiCharCallbacks* wifiCallbacks = nullptr;
+SupabaseCharCallbacks* supabaseCallbacks = nullptr;
+UserCharCallbacks* userCallbacks = nullptr;
  
 // Credentials received via BLE
 String receivedWiFiSSID = "";
@@ -34,118 +80,95 @@ void saveProvisioningData();
 // ===== BLE SERVER CALLBACKS =====
  
 class ServerCallbacks: public NimBLEServerCallbacks {
-    void onConnect(NimBLEServer* pServer) {
+    // NEW signature for NimBLE-Arduino v2.x
+    void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) {
+        // FIRST thing - update status so mobile app can see this fired
+        updateBLEStatus("firmware_connected");
+        
+        Serial.println("\n🔔🔔🔔 onConnect callback FIRED! 🔔🔔🔔");  // DEBUG - very obvious
+        Serial.println("════════════════════════════════════════");
         bleConnected = true;
-        Serial.println("\n════════════════════════════════════════");
         Serial.println("📱 BLE Client connected!");
         Serial.printf("  Connections: %d\n", pServer->getConnectedCount());
+        Serial.printf("  MTU: %d bytes\n", NimBLEDevice::getMTU());
+        Serial.printf("  Client Address: %s\n", connInfo.getAddress().toString().c_str());
+        Serial.printf("  Connection ID: %d\n", connInfo.getConnHandle());
         Serial.println("════════════════════════════════════════\n");
-        updateBLEStatus("connected");
-    }
-    
-    void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) {
-        bleConnected = true;
-        Serial.println("\n════════════════════════════════════════");
-        Serial.println("📱 BLE Client connected (with details)!");
-        Serial.printf("  Connections: %d\n", pServer->getConnectedCount());
-        Serial.printf("  Connection ID: %d\n", desc->conn_handle);
-        Serial.printf("  MTU: %d\n", NimBLEDevice::getMTU());
-        Serial.println("════════════════════════════════════════\n");
-        updateBLEStatus("connected");
     }
 
-    void onDisconnect(NimBLEServer* pServer) {
+    void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) {
+        Serial.println("\n🔔 onDisconnect callback triggered!");  // DEBUG
+        Serial.printf("  Client Address: %s\n", connInfo.getAddress().toString().c_str());
+        
         bleConnected = false;
-        Serial.println("\n📱 BLE Client disconnected");
+        Serial.println("📱 BLE Client disconnected");
         
         if (!provisioningComplete) {
-            pServer->startAdvertising();
+            NimBLEDevice::startAdvertising();
             Serial.println("🔄 Restarted BLE advertising\n");
         }
     }
     
-    void onMTUChange(uint16_t MTU, ble_gap_conn_desc* desc) {
-        Serial.printf("📶 MTU changed to: %u bytes for connection ID: %d\n", MTU, desc->conn_handle);
+    void onMTUChange(uint16_t MTU, NimBLEConnInfo& connInfo) {
+        Serial.printf("🔔 onMTUChange callback! MTU: %u bytes, Client: %s\n", 
+                     MTU, connInfo.getAddress().toString().c_str());
     }
 };
  
  // ===== CHARACTERISTIC CALLBACKS =====
  
+// Forward declarations
+void processWiFiCredentials(const std::string& value);
+void processSupabaseCredentials(const std::string& value);
+void processUserCredentials(const std::string& value);
+
 class WiFiCharCallbacks: public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* pCharacteristic) {
+        Serial.println("\n");
+        Serial.println("════════════════════════════════════════");
+        Serial.println("🔔🔔🔔 WiFi onWrite CALLED! 🔔🔔🔔");
+        Serial.println("════════════════════════════════════════");
+        
         std::string value = pCharacteristic->getValue();
+        Serial.printf("📥 Received %d bytes\n", value.length());
         
-        Serial.printf("\n📥 WiFi Characteristic Write - Length: %d bytes\n", value.length());
-        
-        if (value.length() > 0) {
-            DynamicJsonDocument doc(512);
-            DeserializationError error = deserializeJson(doc, value.c_str());
-            
-            if (error) {
-                Serial.printf("❌ JSON parse error: %s\n", error.c_str());
-                return;
-            }
-            
-            receivedWiFiSSID = doc["ssid"].as<String>();
-            receivedWiFiPassword = doc["password"].as<String>();
-            
-            Serial.println("✓ WiFi credentials received");
-            Serial.printf("  SSID: %s\n", receivedWiFiSSID.c_str());
-            updateBLEStatus("wifi_received");
+        if (value.length() > 50) {
+            Serial.printf("   Raw (first 50): %s...\n", value.substr(0, 50).c_str());
+        } else {
+            Serial.printf("   Raw data: %s\n", value.c_str());
         }
+        
+        processWiFiCredentials(value);
     }
 };
  
 class SupabaseCharCallbacks: public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* pCharacteristic) {
+        Serial.println("\n");
+        Serial.println("════════════════════════════════════════");
+        Serial.println("🔔🔔🔔 Supabase onWrite CALLED! 🔔🔔🔔");
+        Serial.println("════════════════════════════════════════");
+        
         std::string value = pCharacteristic->getValue();
+        Serial.printf("📥 Received %d bytes\n", value.length());
+        Serial.printf("   Raw (first 50): %s...\n", value.substr(0, 50).c_str());
         
-        Serial.printf("\n📥 Supabase Characteristic Write - Length: %d bytes\n", value.length());
-        
-        if (value.length() > 0) {
-            DynamicJsonDocument doc(1024);
-            DeserializationError error = deserializeJson(doc, value.c_str());
-            
-            if (error) {
-                Serial.printf("❌ JSON parse error: %s\n", error.c_str());
-                return;
-            }
-            
-            receivedSupabaseURL = doc["url"].as<String>();
-            receivedSupabaseKey = doc["anon_key"].as<String>();
-            
-            Serial.println("✓ Supabase credentials received");
-            updateBLEStatus("supabase_received");
-        }
+        processSupabaseCredentials(value);
     }
 };
  
 class UserCharCallbacks: public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* pCharacteristic) {
+        Serial.println("\n");
+        Serial.println("════════════════════════════════════════");
+        Serial.println("🔔🔔🔔 User onWrite CALLED! 🔔🔔🔔");
+        Serial.println("════════════════════════════════════════");
+        
         std::string value = pCharacteristic->getValue();
+        Serial.printf("📥 Received %d bytes\n", value.length());
+        Serial.printf("   Raw (first 50): %s...\n", value.substr(0, 50).c_str());
         
-        Serial.printf("\n📥 User Characteristic Write - Length: %d bytes\n", value.length());
-        
-        if (value.length() > 0) {
-            DynamicJsonDocument doc(256);
-            DeserializationError error = deserializeJson(doc, value.c_str());
-            
-            if (error) {
-                Serial.printf("❌ JSON parse error: %s\n", error.c_str());
-                return;
-            }
-            
-            receivedUserID = doc["user_id"].as<String>();
-            
-            Serial.printf("✓ User ID received: %s\n", receivedUserID.c_str());
-            updateBLEStatus("user_received");
-            
-            // Save all credentials to flash
-            saveProvisioningData();
-            
-            provisioningComplete = true;
-            updateBLEStatus("provisioning_complete");
-        }
+        processUserCredentials(value);
     }
 };
  
@@ -157,6 +180,164 @@ class UserCharCallbacks: public NimBLECharacteristicCallbacks {
          pStatusChar->notify();
      }
  }
+
+// Process WiFi credentials (called from callback or manual check)
+void processWiFiCredentials(const std::string& value) {
+    if (value.length() > 0) {
+        Serial.printf("📦 Raw data received: %d bytes\n", value.length());
+        Serial.printf("   First 50 chars: %s\n", value.substr(0, 50).c_str());
+        Serial.printf("   Last 10 chars: %s\n", value.substr(value.length() - 10).c_str());
+        
+        // Check if it looks like Base64 (alphanumeric with +/=)
+        bool looksLikeBase64 = true;
+        for (size_t i = 0; i < value.length() && i < 20; i++) {
+            char c = value[i];
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=')) {
+                looksLikeBase64 = false;
+                break;
+            }
+        }
+        
+        Serial.printf("   Looks like Base64: %s\n", looksLikeBase64 ? "YES" : "NO");
+        
+        String decodedJson;
+        if (looksLikeBase64) {
+            Serial.println("🔓 Decoding Base64...");
+            decodedJson = base64_decode(value.c_str());
+            Serial.printf("   Decoded length: %d bytes\n", decodedJson.length());
+            if (decodedJson.length() == 0) {
+                Serial.println("   ⚠️  Base64 decode returned empty! Trying raw JSON...");
+                decodedJson = String(value.c_str());
+            }
+        } else {
+            Serial.println("📝 Data appears to be raw JSON, skipping Base64 decode");
+            decodedJson = String(value.c_str());
+        }
+        
+        Serial.printf("   Final JSON to parse: %s\n", decodedJson.c_str());
+        
+        // Now parse the JSON
+        DynamicJsonDocument doc(512);
+        DeserializationError error = deserializeJson(doc, decodedJson);
+        
+        if (error) {
+            Serial.printf("❌ JSON parse error: %s\n", error.c_str());
+            Serial.printf("   Attempted to parse: %s\n", decodedJson.c_str());
+            return;
+        }
+        
+        receivedWiFiSSID = doc["ssid"].as<String>();
+        receivedWiFiPassword = doc["password"].as<String>();
+        
+        Serial.println("✅ WiFi credentials received and parsed!");
+        Serial.printf("  SSID: %s\n", receivedWiFiSSID.c_str());
+        Serial.printf("  Password: %s\n", receivedWiFiPassword.c_str());
+        updateBLEStatus("wifi_received");
+    }
+}
+
+// Process Supabase credentials
+void processSupabaseCredentials(const std::string& value) {
+    if (value.length() > 0) {
+        Serial.printf("📦 Raw data received: %d bytes\n", value.length());
+        Serial.printf("   First 50 chars: %s\n", value.substr(0, 50).c_str());
+        
+        // Check if it looks like Base64
+        bool looksLikeBase64 = true;
+        for (size_t i = 0; i < value.length() && i < 20; i++) {
+            char c = value[i];
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=')) {
+                looksLikeBase64 = false;
+                break;
+            }
+        }
+        
+        String decodedJson;
+        if (looksLikeBase64) {
+            Serial.println("🔓 Decoding Base64...");
+            decodedJson = base64_decode(value.c_str());
+            if (decodedJson.length() == 0) {
+                Serial.println("   ⚠️  Base64 decode returned empty! Trying raw JSON...");
+                decodedJson = String(value.c_str());
+            }
+        } else {
+            Serial.println("📝 Data appears to be raw JSON, skipping Base64 decode");
+            decodedJson = String(value.c_str());
+        }
+        
+        DynamicJsonDocument doc(1024);
+        DeserializationError error = deserializeJson(doc, decodedJson);
+        
+        if (error) {
+            Serial.printf("❌ JSON parse error: %s\n", error.c_str());
+            Serial.printf("   Attempted to parse (first 200): %s\n", decodedJson.substring(0, 200).c_str());
+            return;
+        }
+        
+        receivedSupabaseURL = doc["url"].as<String>();
+        receivedSupabaseKey = doc["anon_key"].as<String>();
+        
+        Serial.println("✅ Supabase credentials received and parsed!");
+        Serial.printf("  URL: %s\n", receivedSupabaseURL.c_str());
+        updateBLEStatus("supabase_received");
+    }
+}
+
+// Process User credentials
+void processUserCredentials(const std::string& value) {
+    if (value.length() > 0) {
+        Serial.printf("📦 Raw data received: %d bytes\n", value.length());
+        Serial.printf("   First 50 chars: %s\n", value.substr(0, 50).c_str());
+        
+        // Check if it looks like Base64
+        bool looksLikeBase64 = true;
+        for (size_t i = 0; i < value.length() && i < 20; i++) {
+            char c = value[i];
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=')) {
+                looksLikeBase64 = false;
+                break;
+            }
+        }
+        
+        String decodedJson;
+        if (looksLikeBase64) {
+            Serial.println("🔓 Decoding Base64...");
+            decodedJson = base64_decode(value.c_str());
+            if (decodedJson.length() == 0) {
+                Serial.println("   ⚠️  Base64 decode returned empty! Trying raw JSON...");
+                decodedJson = String(value.c_str());
+            }
+        } else {
+            Serial.println("📝 Data appears to be raw JSON, skipping Base64 decode");
+            decodedJson = String(value.c_str());
+        }
+        
+        Serial.printf("   Final JSON to parse: %s\n", decodedJson.c_str());
+        
+        DynamicJsonDocument doc(256);
+        DeserializationError error = deserializeJson(doc, decodedJson);
+        
+        if (error) {
+            Serial.printf("❌ JSON parse error: %s\n", error.c_str());
+            Serial.printf("   Attempted to parse: %s\n", decodedJson.c_str());
+            return;
+        }
+        
+        receivedUserID = doc["user_id"].as<String>();
+        
+        Serial.println("✅ User ID received and parsed!");
+        Serial.printf("  User ID: %s\n", receivedUserID.c_str());
+        updateBLEStatus("user_received");
+        
+        // Save all credentials to flash
+        Serial.println("💾 Saving all credentials to flash...");
+        saveProvisioningData();
+        
+        provisioningComplete = true;
+        updateBLEStatus("provisioning_complete");
+        Serial.println("🎉 PROVISIONING COMPLETE!");
+    }
+}
  
  void saveProvisioningData() {
      Preferences prefs;
@@ -236,75 +417,162 @@ void startBLEProvisioning() {
      
      // Create BLE Server
      pServer = NimBLEDevice::createServer();
-     pServer->setCallbacks(new ServerCallbacks());
      
-     Serial.println("✓ BLE Server created with callbacks");
+     // Create persistent callback instance
+     serverCallbacks = new ServerCallbacks();
+     Serial.println("🔧 Registering server callbacks...");
+     pServer->setCallbacks(serverCallbacks);
+     Serial.printf("✓ BLE Server created with callbacks at: %p\n", serverCallbacks);
      
      // Create BLE Service
      NimBLEService* pService = pServer->createService(SERVICE_UUID);
+     Serial.printf("✓ Service created: %s\n", SERVICE_UUID);
      
-     // WiFi Characteristic
-     NimBLECharacteristic* pWiFiChar = pService->createCharacteristic(
+     // WiFi Characteristic - WRITE property for write-with-response
+     pWiFiChar = pService->createCharacteristic(
          WIFI_CHAR_UUID,
          NIMBLE_PROPERTY::WRITE
      );
-     pWiFiChar->setCallbacks(new WiFiCharCallbacks());
+     wifiCallbacks = new WiFiCharCallbacks();
+     pWiFiChar->setCallbacks(wifiCallbacks);
+     Serial.printf("✓ WiFi char created: %s\n", WIFI_CHAR_UUID);
+     Serial.printf("   Characteristic pointer: %p\n", pWiFiChar);
+     Serial.printf("   Callbacks registered at: %p\n", wifiCallbacks);
      
      // Supabase Characteristic
-     NimBLECharacteristic* pSupabaseChar = pService->createCharacteristic(
+     pSupabaseChar = pService->createCharacteristic(
          SUPABASE_CHAR_UUID,
          NIMBLE_PROPERTY::WRITE
      );
-     pSupabaseChar->setCallbacks(new SupabaseCharCallbacks());
+     supabaseCallbacks = new SupabaseCharCallbacks();
+     pSupabaseChar->setCallbacks(supabaseCallbacks);
+     Serial.printf("✓ Supabase char created: %s\n", SUPABASE_CHAR_UUID);
+     Serial.printf("   Characteristic pointer: %p\n", pSupabaseChar);
+     Serial.printf("   Callbacks registered at: %p\n", supabaseCallbacks);
      
      // User ID Characteristic
-     NimBLECharacteristic* pUserChar = pService->createCharacteristic(
+     pUserChar = pService->createCharacteristic(
          USER_CHAR_UUID,
          NIMBLE_PROPERTY::WRITE
      );
-     pUserChar->setCallbacks(new UserCharCallbacks());
+     userCallbacks = new UserCharCallbacks();
+     pUserChar->setCallbacks(userCallbacks);
+     Serial.printf("✓ User char created: %s\n", USER_CHAR_UUID);
+     Serial.printf("   Characteristic pointer: %p\n", pUserChar);
+     Serial.printf("   Callbacks registered at: %p\n", userCallbacks);
      
-     // Status Characteristic
+     // Status Characteristic with boot timestamp to verify fresh connection
      pStatusChar = pService->createCharacteristic(
          STATUS_CHAR_UUID,
          NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
      );
-     pStatusChar->setValue("waiting");
+     
+     // Create a unique status with timestamp to prove this is the current firmware
+     String initialStatus = "waiting_" + String(millis());
+     pStatusChar->setValue(initialStatus.c_str());
+     Serial.printf("✓ Status char created: %s\n", STATUS_CHAR_UUID);
+     Serial.printf("  Initial status value: %s (length: %d)\n", initialStatus.c_str(), initialStatus.length());
      
      // Start service
      pService->start();
      Serial.println("✓ Service started");
      
-    // Configure advertising
+    // CRITICAL: Start the BLE server explicitly
+    Serial.println("🚀 Starting BLE server...");
+    
+    // Configure advertising BEFORE starting
     NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SERVICE_UUID);
-    pAdvertising->setScanResponse(true);
-    pAdvertising->setMinInterval(100);  // 100ms
-    pAdvertising->setMaxInterval(200);  // 200ms
-    pAdvertising->setMinPreferred(0x06); // Connection interval
-    pAdvertising->setMaxPreferred(0x12);
+    pAdvertising->setMinInterval(100);     // 100ms * 0.625 = 62.5ms
+    pAdvertising->setMaxInterval(200);     // 200ms * 0.625 = 125ms
+    Serial.println("✓ Advertising configured");
     
-    // Start advertising
-    pAdvertising->start();
+    // Start advertising using NimBLEDevice to ensure server starts
+    NimBLEDevice::startAdvertising();
+    Serial.println("✓ BLE advertising started via NimBLEDevice");
+    
+    // Give NimBLE time to fully start
+    delay(100);
+    
+    Serial.println("✓ BLE server is now accepting connections");
     
     Serial.println("════════════════════════════════════════");
-    Serial.println("✓ BLE Server started and advertising");
+    Serial.println("✓ BLE Server ready!");
+    Serial.printf("  Device Name: %s\n", deviceName);
     Serial.printf("  Service UUID: %s\n", SERVICE_UUID);
     Serial.printf("  MTU: 512 bytes\n");
+    Serial.printf("  Server Address: %s\n", NimBLEDevice::getAddress().toString().c_str());
     Serial.println("════════════════════════════════════════");
     Serial.println("\n📱 Waiting for mobile app connection...\n");
      
      // Blink LED to indicate provisioning mode
      unsigned long startTime = millis();
      unsigned long lastBlink = millis();
+     unsigned long lastDebug = millis();
+     unsigned long lastCheck = millis();
+     size_t lastWiFiLen = 0;
+     size_t lastSupabaseLen = 0;
+     size_t lastUserLen = 0;
+     
      while (!provisioningComplete && (millis() - startTime < BLE_TIMEOUT_MS)) {
+         // Manually check characteristic values every 2 seconds (callbacks may not fire)
+         if (millis() - lastCheck >= 2000 && bleConnected) {
+             if (pWiFiChar != nullptr) {
+                 std::string wifiValue = pWiFiChar->getValue();
+                 if (wifiValue.length() != lastWiFiLen) {
+                     Serial.println("\n🔍 MANUAL CHECK: WiFi char value changed!");
+                     Serial.printf("   Old length: %d, New length: %d\n", lastWiFiLen, wifiValue.length());
+                     if (wifiValue.length() > 0) {
+                         Serial.println("   ⚠️  Data written but callback didn't fire! Triggering manual processing...");
+                         processWiFiCredentials(wifiValue);
+                     }
+                     lastWiFiLen = wifiValue.length();
+                 }
+             }
+             
+             if (pSupabaseChar != nullptr) {
+                 std::string supabaseValue = pSupabaseChar->getValue();
+                 if (supabaseValue.length() != lastSupabaseLen) {
+                     Serial.println("\n🔍 MANUAL CHECK: Supabase char value changed!");
+                     Serial.printf("   Old length: %d, New length: %d\n", lastSupabaseLen, supabaseValue.length());
+                     if (supabaseValue.length() > 0) {
+                         Serial.println("   ⚠️  Data written but callback didn't fire! Triggering manual processing...");
+                         processSupabaseCredentials(supabaseValue);
+                     }
+                     lastSupabaseLen = supabaseValue.length();
+                 }
+             }
+             
+             if (pUserChar != nullptr) {
+                 std::string userValue = pUserChar->getValue();
+                 if (userValue.length() != lastUserLen) {
+                     Serial.println("\n🔍 MANUAL CHECK: User char value changed!");
+                     Serial.printf("   Old length: %d, New length: %d\n", lastUserLen, userValue.length());
+                     if (userValue.length() > 0) {
+                         Serial.println("   ⚠️  Data written but callback didn't fire! Triggering manual processing...");
+                         processUserCredentials(userValue);
+                     }
+                     lastUserLen = userValue.length();
+                 }
+             }
+             
+             lastCheck = millis();
+         }
+         
+         // Print debug info every 5 seconds
+         if (millis() - lastDebug >= 5000) {
+             Serial.printf("⏳ Still waiting... (Connected: %s)\n", bleConnected ? "YES" : "NO");
+             lastDebug = millis();
+         }
+         
          // Non-blocking LED blink
          if (millis() - lastBlink >= 500) {
              digitalWrite(STATUS_LED, !digitalRead(STATUS_LED));
              lastBlink = millis();
          }
+         
          // Yield to allow BLE stack to process events
-         delay(10);
+         vTaskDelay(1);  // FreeRTOS yield - allows NimBLE task to run
      }
      
      // Turn off LED
