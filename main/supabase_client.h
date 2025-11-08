@@ -11,11 +11,12 @@
  #include <ArduinoJson.h>
  #include "config.h"
  
- // Global credentials
- String supabaseUrl = "";
- String supabaseKey = "";
- String userId = "";
- String deviceId = "";
+// Global credentials
+String supabaseUrl = "";
+String supabaseKey = "";
+String userId = "";
+String householdId = "";
+String deviceId = "";
  
  void initializeSupabase() {
      Serial.println("Initializing Supabase client...");
@@ -27,18 +28,20 @@
      supabaseKey = prefs.getString("anon_key", "");
      prefs.end();
      
-     prefs.begin("device", true);
-     userId = prefs.getString("user_id", "");
-     deviceId = prefs.getString("id", "");
-     prefs.end();
-     
-     if (supabaseUrl.length() > 0 && supabaseKey.length() > 0) {
-         Serial.println("✓ Supabase client initialized");
-         Serial.printf("  User ID: %s\n", userId.c_str());
-         Serial.printf("  Device ID: %s\n", deviceId.c_str());
-     } else {
-         Serial.println("✗ Supabase credentials missing");
-     }
+    prefs.begin("device", true);
+    userId = prefs.getString("user_id", "");
+    householdId = prefs.getString("household_id", "");
+    deviceId = prefs.getString("id", "");
+    prefs.end();
+    
+    if (supabaseUrl.length() > 0 && supabaseKey.length() > 0) {
+        Serial.println("✓ Supabase client initialized");
+        Serial.printf("  User ID: %s\n", userId.c_str());
+        Serial.printf("  Household ID: %s\n", householdId.c_str());
+        Serial.printf("  Device ID: %s\n", deviceId.c_str());
+    } else {
+        Serial.println("✗ Supabase credentials missing");
+    }
  }
  
  bool insertDrinkingEvent(String petId, int waterConsumedMl, String timestamp) {

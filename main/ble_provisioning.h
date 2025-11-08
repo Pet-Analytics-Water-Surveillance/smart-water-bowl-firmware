@@ -73,6 +73,7 @@ String receivedWiFiPassword = "";
 String receivedSupabaseURL = "";
 String receivedSupabaseKey = "";
 String receivedUserID = "";
+String receivedHouseholdID = "";
 
 // ===== FORWARD DECLARATIONS =====
 void updateBLEStatus(String status);
@@ -325,9 +326,11 @@ void processUserCredentials(const std::string& value) {
         }
         
         receivedUserID = doc["user_id"].as<String>();
+        receivedHouseholdID = doc["household_id"].as<String>();
         
-        Serial.println("✅ User ID received and parsed!");
+        Serial.println("✅ User ID and Household ID received and parsed!");
         Serial.printf("  User ID: %s\n", receivedUserID.c_str());
+        Serial.printf("  Household ID: %s\n", receivedHouseholdID.c_str());
         updateBLEStatus("user_received");
         
         // Save all credentials to flash
@@ -355,21 +358,22 @@ void processUserCredentials(const std::string& value) {
      prefs.putString("anon_key", receivedSupabaseKey);
      prefs.end();
      
-     // Save user ID
-     prefs.begin("device", false);
-     prefs.putString("user_id", receivedUserID);
-     
-     // Generate device ID from MAC if not exists
-     if (!prefs.isKey("id")) {
-         uint8_t mac[6];
-         WiFi.macAddress(mac);
-         char idBuf[32];
-         snprintf(idBuf, sizeof(idBuf), "fountain_%02X%02X%02X", 
-                  mac[3], mac[4], mac[5]);
-         prefs.putString("id", String(idBuf));
-     }
-     
-     prefs.end();
+    // Save user ID and household ID
+    prefs.begin("device", false);
+    prefs.putString("user_id", receivedUserID);
+    prefs.putString("household_id", receivedHouseholdID);
+    
+    // Generate device ID from MAC if not exists
+    if (!prefs.isKey("id")) {
+        uint8_t mac[6];
+        WiFi.macAddress(mac);
+        char idBuf[32];
+        snprintf(idBuf, sizeof(idBuf), "fountain_%02X%02X%02X", 
+                 mac[3], mac[4], mac[5]);
+        prefs.putString("id", String(idBuf));
+    }
+    
+    prefs.end();
      
      Serial.println("✓ All credentials saved to flash");
  }

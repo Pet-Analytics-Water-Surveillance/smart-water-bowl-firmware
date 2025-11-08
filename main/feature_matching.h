@@ -23,11 +23,12 @@
  // Global reference features
  std::vector<ImageFeatures> referenceFeatures;
  
- // External variables
- extern String supabaseUrl;
- extern String supabaseKey;
- extern String userId;
- extern uint8_t* jpegBuffer;
+// External variables
+extern String supabaseUrl;
+extern String supabaseKey;
+extern String userId;
+extern String householdId;
+extern uint8_t* jpegBuffer;
  
  void initializeStorage() {
      Serial.println("Initializing LittleFS...");
@@ -177,10 +178,10 @@
          return;
      }
      
-     referenceFeatures.clear();
-     
+    referenceFeatures.clear();
+    
     HTTPClient http;
-    String url = supabaseUrl + "/rest/v1/pets?user_id=eq." + userId + 
+    String url = supabaseUrl + "/rest/v1/pets?household_id=eq." + householdId + 
                  "&select=id,name,photo_url";
      
      http.begin(url);

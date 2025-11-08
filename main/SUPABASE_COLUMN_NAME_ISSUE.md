@@ -76,7 +76,52 @@ ALTER TABLE pets RENAME COLUMN image_url TO reference_image_url;
 - Supabase Project: `eovsqlzgudrhjaeiskon`
 
 ## Status
-⚠️ **UNRESOLVED** - Waiting for database schema check
+✅ **RESOLVED** - Fixed on November 8, 2025
+
+### Root Cause Analysis
+The firmware had TWO issues querying the Supabase `pets` table:
+
+1. **Wrong Column Name**: Firmware requested `reference_image_url` but the actual column is `photo_url`
+2. **Wrong Query Filter**: Firmware queried by `user_id` but the `pets` table only has `household_id`
+
+### Database Schema (Verified via Supabase MCP)
+The `pets` table structure:
+- ✅ `household_id` (uuid) - Links pets to households
+- ✅ `photo_url` (text) - Stores pet image URLs
+- ❌ `user_id` - Does NOT exist in pets table
+- ❌ `reference_image_url` - Does NOT exist in pets table
+
+**Database relationships:**
+- Users → Households (via `household_members` table)
+- Pets → Households (via `household_id` in `pets` table)
+
+### Changes Made
+
+#### 1. Mobile App (`mobile-app/src/services/bluetooth/BLEService.ts`)
+- Updated to send BOTH `user_id` AND `household_id` during BLE provisioning
+- Previously only sent `user_id` even though `household_id` was available
+
+#### 2. Firmware (`smart-water-bowl-firmware/main/ble_provisioning.h`)
+- Added `receivedHouseholdID` variable to receive household ID from mobile app
+- Updated `processUserCredentials()` to parse `household_id` from JSON
+- Updated `saveProvisioningData()` to save `household_id` to flash memory
+
+#### 3. Firmware (`smart-water-bowl-firmware/main/supabase_client.h`)
+- Added global `householdId` variable
+- Updated `initializeSupabase()` to load `household_id` from preferences
+- Now logs both User ID and Household ID on initialization
+
+#### 4. Firmware (`smart-water-bowl-firmware/main/feature_matching.h`)
+- Added `extern String householdId` declaration
+- Changed query from `user_id=eq.XXX` to `household_id=eq.XXX`
+- Changed column from `reference_image_url` to `photo_url`
+
+### Testing Required
+After flashing the updated firmware:
+1. Re-provision the device via the mobile app (to receive `household_id`)
+2. Device should successfully fetch pets by `household_id`
+3. Device should successfully download pet images from `photo_url`
+4. Pet identification via image comparison should work
 
 ## Other Successes Today
 ✅ PSRAM enabled - Memory allocation working
