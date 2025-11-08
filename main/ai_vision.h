@@ -25,27 +25,50 @@
      size_t imageSize;
  };
  
- void initializeAIVision() {
-     Serial.println("Initializing AI Vision V2...");
-     
-     // Initialize I2C FIRST - before allocating memory
-     Serial.println("[INIT] Initializing I2C bus...");
-     Wire.begin(I2C_SDA, I2C_SCL);
-     Wire.setClock(100000);
-     delay(500);  // Give I2C time to stabilize
-     Serial.println("  ✓ I2C bus ready");
-     
-     // Allocate JPEG buffer in PSRAM
-     jpegBuffer = (uint8_t*)ps_malloc(JPEG_BUFFER_SIZE);
-     if (!jpegBuffer) {
-         Serial.println("✗ Failed to allocate JPEG buffer");
-         while(1) { 
-             digitalWrite(STATUS_LED, HIGH);
-             delay(100);
-             digitalWrite(STATUS_LED, LOW);
-             delay(100);
-         }
-     }
+void initializeAIVision() {
+    Serial.println("Initializing AI Vision V2...");
+    
+    // Check available memory before allocation
+    Serial.println("\n📊 Memory before JPEG buffer allocation:");
+    Serial.printf("  Free heap: %d bytes\n", ESP.getFreeHeap());
+    Serial.printf("  Free PSRAM: %d bytes\n", ESP.getFreePsram());
+    Serial.printf("  PSRAM size: %d bytes\n", ESP.getPsramSize());
+    Serial.printf("  Needed: %d bytes\n", JPEG_BUFFER_SIZE);
+    
+    // Check if PSRAM is available
+    if (ESP.getPsramSize() == 0) {
+        Serial.println("⚠️  WARNING: PSRAM not available!");
+        Serial.println("   Make sure to enable PSRAM in Arduino IDE:");
+        Serial.println("   Tools > PSRAM > 'OPI PSRAM' or 'QSPI PSRAM'");
+    }
+    
+    // Initialize I2C FIRST - before allocating memory
+    Serial.println("[INIT] Initializing I2C bus...");
+    Wire.begin(I2C_SDA, I2C_SCL);
+    Wire.setClock(100000);
+    delay(500);  // Give I2C time to stabilize
+    Serial.println("  ✓ I2C bus ready");
+    
+    // Allocate JPEG buffer in PSRAM
+    Serial.printf("Allocating %d bytes for JPEG buffer...\n", JPEG_BUFFER_SIZE);
+    jpegBuffer = (uint8_t*)ps_malloc(JPEG_BUFFER_SIZE);
+    if (!jpegBuffer) {
+        Serial.println("\n❌❌❌ CRITICAL ERROR ❌❌❌");
+        Serial.println("✗ Failed to allocate JPEG buffer");
+        Serial.printf("  Requested: %d bytes\n", JPEG_BUFFER_SIZE);
+        Serial.printf("  Free PSRAM: %d bytes\n", ESP.getFreePsram());
+        Serial.printf("  Free heap: %d bytes\n", ESP.getFreeHeap());
+        Serial.println("\nPossible solutions:");
+        Serial.println("  1. Enable PSRAM in Arduino IDE (Tools > PSRAM)");
+        Serial.println("  2. Restart the device");
+        Serial.println("  3. Check for memory leaks");
+        while(1) { 
+            digitalWrite(STATUS_LED, HIGH);
+            delay(100);
+            digitalWrite(STATUS_LED, LOW);
+            delay(100);
+        }
+    }
      
      // Initialize AI Vision - I2C already initialized above
      Serial.println("[INIT] Initializing AI Vision V2...");

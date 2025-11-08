@@ -12,6 +12,7 @@
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 #include "config.h"
 
 extern "C" {
@@ -578,17 +579,52 @@ void startBLEProvisioning() {
      // Turn off LED
      digitalWrite(STATUS_LED, LOW);
      
-     // Cleanup
-     if (provisioningComplete) {
-         Serial.println("\n✓ Provisioning successful!");
-         delay(1000);
-     } else {
-         Serial.println("\n⚠️  Provisioning timeout!");
-     }
-     
-     // Stop BLE and free resources
-     NimBLEDevice::deinit(true);
-     Serial.println("✓ BLE stopped, memory freed");
+    // Cleanup
+    if (provisioningComplete) {
+        Serial.println("\n✓ Provisioning successful!");
+        delay(1000);
+    } else {
+        Serial.println("\n⚠️  Provisioning timeout!");
+    }
+    
+    // Print memory before cleanup
+    Serial.println("\n📊 Memory before BLE cleanup:");
+    Serial.printf("  Free heap: %d bytes\n", ESP.getFreeHeap());
+    Serial.printf("  Free PSRAM: %d bytes\n", ESP.getFreePsram());
+    Serial.printf("  Largest free block: %d bytes\n", heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    
+    // Delete callback instances to free memory
+    if (serverCallbacks) { delete serverCallbacks; serverCallbacks = nullptr; }
+    if (wifiCallbacks) { delete wifiCallbacks; wifiCallbacks = nullptr; }
+    if (supabaseCallbacks) { delete supabaseCallbacks; supabaseCallbacks = nullptr; }
+    if (userCallbacks) { delete userCallbacks; userCallbacks = nullptr; }
+    
+    // Stop advertising
+    NimBLEDevice::stopAdvertising();
+    
+    // Disconnect all clients
+    if (pServer && pServer->getConnectedCount() > 0) {
+        Serial.println("Disconnecting BLE clients...");
+        pServer->disconnect(0);  // Disconnect first connection
+    }
+    
+    // Deinitialize NimBLE completely
+    NimBLEDevice::deinit(true);
+    Serial.println("✓ BLE stopped");
+    
+    // Give system time to free resources
+    delay(1000);
+    
+    // Force garbage collection
+    Serial.println("🧹 Forcing heap compaction...");
+    delay(500);
+    
+    // Print memory after cleanup
+    Serial.println("\n📊 Memory after BLE cleanup:");
+    Serial.printf("  Free heap: %d bytes\n", ESP.getFreeHeap());
+    Serial.printf("  Free PSRAM: %d bytes\n", ESP.getFreePsram());
+    Serial.printf("  Largest free block: %d bytes\n", heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    Serial.println();
  }
  
  #endif // BLE_PROVISIONING_H

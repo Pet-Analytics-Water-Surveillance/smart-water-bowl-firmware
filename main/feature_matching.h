@@ -188,37 +188,62 @@
      http.addHeader("Authorization", "Bearer " + supabaseKey);
      http.setTimeout(HTTP_TIMEOUT_MS);
      
-     int httpCode = http.GET();
-     
-     if (httpCode == 200) {
-         String payload = http.getString();
-         
-         DynamicJsonDocument doc(8192);
-         deserializeJson(doc, payload);
-         
-         JsonArray pets = doc.as<JsonArray>();
-         Serial.printf("Found %d pets for user\n\n", pets.size());
-         
-         for (JsonObject pet : pets) {
-             String petId = pet["id"].as<String>();
-             String petName = pet["name"].as<String>();
-             String imageUrl = pet["reference_image_url"].as<String>();
-             
-             Serial.printf("  Downloading: %s\n", petName.c_str());
-             
-             if (downloadAndExtractFeatures(petId, petName, imageUrl)) {
-                 Serial.printf("    ✓ Features extracted\n");
-             } else {
-                 Serial.printf("    ✗ Failed\n");
-             }
-         }
-         
-         Serial.printf("\n✓ Sync complete: %d pets loaded\n", referenceFeatures.size());
-         Serial.println("════════════════════════════════════════\n");
-         
-     } else {
-         Serial.printf("✗ Failed to fetch pets: HTTP %d\n", httpCode);
-     }
+    int httpCode = http.GET();
+    
+    Serial.printf("Request URL: %s\n", url.c_str());
+    Serial.printf("HTTP Response Code: %d\n", httpCode);
+    
+    if (httpCode == 200) {
+        String payload = http.getString();
+        Serial.printf("Response payload (first 200 chars): %s\n", payload.substring(0, 200).c_str());
+        
+        DynamicJsonDocument doc(8192);
+        DeserializationError error = deserializeJson(doc, payload);
+        
+        if (error) {
+            Serial.printf("✗ JSON parse error: %s\n", error.c_str());
+            http.end();
+            return;
+        }
+        
+        JsonArray pets = doc.as<JsonArray>();
+        Serial.printf("Found %d pets for user\n\n", pets.size());
+        
+        if (pets.size() == 0) {
+            Serial.println("⚠️  No pets registered for this user!");
+            Serial.println("   Please add pets via the mobile app first.");
+            Serial.println("════════════════════════════════════════\n");
+            http.end();
+            return;
+        }
+        
+        for (JsonObject pet : pets) {
+            String petId = pet["id"].as<String>();
+            String petName = pet["name"].as<String>();
+            String imageUrl = pet["reference_image_url"].as<String>();
+            
+            Serial.printf("  Downloading: %s\n", petName.c_str());
+            
+            if (downloadAndExtractFeatures(petId, petName, imageUrl)) {
+                Serial.printf("    ✓ Features extracted\n");
+            } else {
+                Serial.printf("    ✗ Failed\n");
+            }
+        }
+        
+        Serial.printf("\n✓ Sync complete: %d pets loaded\n", referenceFeatures.size());
+        Serial.println("════════════════════════════════════════\n");
+        
+    } else {
+        Serial.printf("✗ Failed to fetch pets: HTTP %d\n", httpCode);
+        String errorResponse = http.getString();
+        Serial.printf("Error response: %s\n", errorResponse.c_str());
+        Serial.println("\nPossible causes:");
+        Serial.println("  1. No pets added to your account yet");
+        Serial.println("  2. Supabase RLS policy blocking access");
+        Serial.println("  3. Invalid user_id or credentials");
+        Serial.println("════════════════════════════════════════\n");
+    }
      
      http.end();
  }

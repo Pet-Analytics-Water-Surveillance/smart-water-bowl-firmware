@@ -19,14 +19,22 @@
  // Global state
  bool deviceProvisioned = false;
  
- void setup() {
-     Serial.begin(115200);
-     delay(2000);
-     
-     printWelcome();
-     
-     // Initialize hardware pins FIRST
-     initializePins();
+void setup() {
+    Serial.begin(115200);
+    delay(2000);
+    
+    printWelcome();
+    
+    // Print initial memory state
+    Serial.println("\n📊 Initial Memory State:");
+    Serial.printf("  Total heap: %d bytes\n", ESP.getHeapSize());
+    Serial.printf("  Free heap: %d bytes\n", ESP.getFreeHeap());
+    Serial.printf("  Total PSRAM: %d bytes\n", ESP.getPsramSize());
+    Serial.printf("  Free PSRAM: %d bytes\n", ESP.getFreePsram());
+    Serial.println();
+    
+    // Initialize hardware pins FIRST
+    initializePins();
      
      // Check if device is provisioned
      deviceProvisioned = checkProvisioningStatus();
