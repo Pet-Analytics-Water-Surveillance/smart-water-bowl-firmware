@@ -179,9 +179,9 @@
      
      referenceFeatures.clear();
      
-     HTTPClient http;
-     String url = supabaseUrl + "/rest/v1/pets?user_id=eq." + userId + 
-                  "&select=id,name,reference_image_url";
+    HTTPClient http;
+    String url = supabaseUrl + "/rest/v1/pets?user_id=eq." + userId + 
+                 "&select=id,name,photo_url";
      
      http.begin(url);
      http.addHeader("apikey", supabaseKey);
@@ -220,7 +220,7 @@
         for (JsonObject pet : pets) {
             String petId = pet["id"].as<String>();
             String petName = pet["name"].as<String>();
-            String imageUrl = pet["reference_image_url"].as<String>();
+            String imageUrl = pet["photo_url"].as<String>();
             
             Serial.printf("  Downloading: %s\n", petName.c_str());
             
