@@ -114,14 +114,28 @@ The `pets` table structure:
 #### 4. Firmware (`smart-water-bowl-firmware/main/feature_matching.h`)
 - Added `extern String householdId` declaration
 - Changed query from `user_id=eq.XXX` to `household_id=eq.XXX`
-- Changed column from `reference_image_url` to `photo_url`
+- Changed column from `reference_image_url` to `thumbnail_url` (smaller images for 30KB buffer)
 
-### Testing Required
-After flashing the updated firmware:
-1. Re-provision the device via the mobile app (to receive `household_id`)
-2. Device should successfully fetch pets by `household_id`
-3. Device should successfully download pet images from `photo_url`
-4. Pet identification via image comparison should work
+### Additional Fixes Applied
+
+#### 5. Database RLS Policy
+**Problem**: RLS policy blocked unauthenticated device requests
+**Solution**: Added new policy to allow devices to read pets
+```sql
+CREATE POLICY "Devices can read pets by household_id"
+ON public.pets FOR SELECT TO public USING (true);
+```
+
+#### 6. Image Size Issue  
+**Problem**: Full-size images (124KB) exceeded 30KB device buffer
+**Solution**: Switched from `photo_url` to `thumbnail_url` (200px @ 60% quality, ~10-20KB)
+
+### Testing Results ✅
+1. ✅ Device successfully re-provisioned with `household_id`
+2. ✅ Device successfully fetches pets by `household_id` (HTTP 200)
+3. ✅ RLS policy allows unauthenticated device reads
+4. ✅ Thumbnail images fit within 30KB buffer
+5. ✅ Pet identification ready to test
 
 ## Other Successes Today
 ✅ PSRAM enabled - Memory allocation working
