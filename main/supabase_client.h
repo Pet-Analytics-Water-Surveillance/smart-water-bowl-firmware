@@ -44,19 +44,19 @@ String deviceId = "";
     }
  }
  
- bool insertDrinkingEvent(String petId, int waterConsumedMl, String timestamp) {
-     if (supabaseUrl.length() == 0) {
-         Serial.println("[Supabase] ✗ Not configured");
-         return false;
-     }
-     
-     if (WiFi.status() != WL_CONNECTED) {
-         Serial.println("[Supabase] ✗ WiFi not connected");
-         return false;
-     }
-     
-     HTTPClient http;
-     String url = supabaseUrl + "/rest/v1/drinking_events";
+bool insertDrinkingEvent(String petId, int waterConsumedMl, String timestamp) {
+    if (supabaseUrl.length() == 0) {
+        Serial.println("[Supabase] ✗ Not configured");
+        return false;
+    }
+    
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("[Supabase] ✗ WiFi not connected");
+        return false;
+    }
+    
+    HTTPClient http;
+    String url = supabaseUrl + "/rest/v1/hydration_events";
      
      http.begin(url);
      http.addHeader("apikey", supabaseKey);
@@ -65,12 +65,11 @@ String deviceId = "";
      http.addHeader("Prefer", "return=minimal");
      http.setTimeout(HTTP_TIMEOUT_MS);
      
-     StaticJsonDocument<512> doc;
-     doc["user_id"] = userId;
-     doc["pet_id"] = petId;
-     doc["device_id"] = deviceId;
-     doc["timestamp"] = timestamp;
-     doc["water_consumed_ml"] = waterConsumedMl;
+    StaticJsonDocument<512> doc;
+    doc["pet_id"] = petId;
+    doc["device_id"] = deviceId;
+    doc["timestamp"] = timestamp;
+    doc["amount_ml"] = waterConsumedMl;
      
      String jsonData;
      serializeJson(doc, jsonData);
