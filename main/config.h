@@ -32,7 +32,7 @@
  
  // ===== HARDWARE CONFIGURATION =====
  #define TANK_HEIGHT_CM    25.0
- #define TANK_DIAMETER_CM  12.0
+ #define BOWL_AREA_CM2     523.89  // Cross-sectional area of water surface
  #define LOW_WATER_THRESHOLD_CM 5.0
  
  // ===== AI VISION SETTINGS =====

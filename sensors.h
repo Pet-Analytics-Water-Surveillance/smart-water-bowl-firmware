@@ -142,8 +142,8 @@ int getDetectedRange() {
  int calculateWaterVolume(float levelCm) {
      if (levelCm < 0) return 0;
      
-     float radius = TANK_DIAMETER_CM / 2.0;
-     float volumeCm3 = PI * radius * radius * levelCm;
+     // Volume = Area × Height
+     float volumeCm3 = BOWL_AREA_CM2 * levelCm;
      
      return (int)volumeCm3;
  }
