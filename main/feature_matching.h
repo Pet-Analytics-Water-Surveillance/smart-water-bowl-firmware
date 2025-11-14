@@ -157,8 +157,10 @@ bool downloadAndExtractFeatures(String petId, String petName, String imageUrl) {
     
     HTTPClient http;
     http.begin(imageUrl);
-    http.setTimeout(HTTP_TIMEOUT_MS);
+    http.setTimeout(15000);  // 15 second timeout for downloads
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setReuse(false);  // Don't reuse connection
+    http.setUserAgent("ESP32");
     
     int httpCode = http.GET();
     
@@ -169,6 +171,12 @@ bool downloadAndExtractFeatures(String petId, String petName, String imageUrl) {
     }
     
     int len = http.getSize();
+    
+#ifdef DEBUG_FEATURE_MATCHING
+    Serial.printf("  HTTP Content-Length: %d\n", len);
+    String contentType = http.header("Content-Type");
+    Serial.printf("  Content-Type: %s\n", contentType.c_str());
+#endif
     
     // Safety check: ensure size is valid and within bounds
     if (len <= 0 || len > JPEG_BUFFER_SIZE) {
@@ -182,21 +190,33 @@ bool downloadAndExtractFeatures(String petId, String petName, String imageUrl) {
     
     WiFiClient* stream = http.getStreamPtr();
     
-    // Read in chunks to prevent buffer overflow
+    // Read data in chunks with proper waiting
     size_t totalRead = 0;
-    size_t chunkSize = 1024;
+    unsigned long downloadStart = millis();
+    const unsigned long downloadTimeout = 15000;  // 15 second timeout
     
-    while (totalRead < len && stream->available()) {
-        size_t remaining = len - totalRead;
-        size_t toRead = (remaining < chunkSize) ? remaining : chunkSize;
+    while (totalRead < len && millis() - downloadStart < downloadTimeout) {
+        // Check if data is available or connection is alive
+        if (stream->available() > 0) {
+            // Read available data (up to remaining bytes needed)
+            size_t remaining = len - totalRead;
+            size_t available = stream->available();
+            size_t toRead = (available < remaining) ? available : remaining;
+            
+            int bytesRead = stream->read(jpegBuffer + totalRead, toRead);
+            if (bytesRead > 0) {
+                totalRead += bytesRead;
+            }
+        } else if (!stream->connected()) {
+            // Connection closed
+            break;
+        } else {
+            // Wait a bit for more data
+            delay(10);
+            yield();
+        }
         
-        size_t bytesRead = stream->readBytes(jpegBuffer + totalRead, toRead);
-        if (bytesRead == 0) break;
-        
-        totalRead += bytesRead;
-        
-        // Watchdog reset
-        yield();
+        yield();  // Watchdog reset
     }
     
     http.end();

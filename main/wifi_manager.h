@@ -10,22 +10,26 @@
  #include <time.h>
  #include "config.h"
  
- void connectToWiFi() {
-     Preferences prefs;
-     prefs.begin("wifi_creds", true);
-     String ssid = prefs.getString("ssid", "");
-     String password = prefs.getString("password", "");
-     prefs.end();
-     
-     if (ssid.length() == 0) {
-         Serial.println("✗ No WiFi credentials found");
-         return;
-     }
-     
-     Serial.printf("Connecting to WiFi: %s\n", ssid.c_str());
-     
-     WiFi.mode(WIFI_STA);
-     WiFi.begin(ssid.c_str(), password.c_str());
+void connectToWiFi() {
+    Preferences prefs;
+    prefs.begin("wifi_creds", true);
+    String ssid = prefs.getString("ssid", "");
+    String password = prefs.getString("password", "");
+    prefs.end();
+    
+    if (ssid.length() == 0) {
+        Serial.println("✗ No WiFi credentials found");
+        return;
+    }
+    
+    Serial.printf("Connecting to WiFi: %s\n", ssid.c_str());
+    
+    WiFi.mode(WIFI_STA);
+    
+    // Increase RX buffer for better HTTP download performance
+    WiFi.setRxBufferSize(8192);
+    
+    WiFi.begin(ssid.c_str(), password.c_str());
      
      unsigned long startTime = millis();
      while (WiFi.status() != WL_CONNECTED && 
