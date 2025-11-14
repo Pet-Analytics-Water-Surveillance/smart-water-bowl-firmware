@@ -25,10 +25,6 @@ void connectToWiFi() {
     Serial.printf("Connecting to WiFi: %s\n", ssid.c_str());
     
     WiFi.mode(WIFI_STA);
-    
-    // Increase RX buffer for better HTTP download performance
-    WiFi.setRxBufferSize(8192);
-    
     WiFi.begin(ssid.c_str(), password.c_str());
      
      unsigned long startTime = millis();
