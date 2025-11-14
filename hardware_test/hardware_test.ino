@@ -417,7 +417,7 @@ void testPumpRelay() {
     Serial.println("  Relay ON (2 seconds)...");
     digitalWrite(PUMP_RELAY, HIGH);
     digitalWrite(STATUS_LED, HIGH);
-    delay(2000);
+    delay(7000);
     
     Serial.println("  Relay OFF");
     digitalWrite(PUMP_RELAY, LOW);

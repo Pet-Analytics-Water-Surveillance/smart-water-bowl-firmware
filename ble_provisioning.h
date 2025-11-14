@@ -218,8 +218,6 @@
      // Start advertising
      NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
      pAdvertising->addServiceUUID(SERVICE_UUID);
-     pAdvertising->setScanResponse(true);
-     pAdvertising->setMinPreferred(0x06);
      pAdvertising->start();
      
      Serial.println("✓ BLE Server started");

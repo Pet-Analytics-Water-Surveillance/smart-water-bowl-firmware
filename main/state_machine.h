@@ -207,40 +207,46 @@
  
  // ===== TASK CREATION =====
  
- void createSystemTasks() {
-     Serial.println("Creating FreeRTOS tasks...");
-     
-     xTaskCreatePinnedToCore(
-         stateMachineTask,
-         "StateMachine",
-         8192,
-         NULL,
-         2,
-         &stateMachineTaskHandle,
-         1
-     );
-     
-     xTaskCreatePinnedToCore(
-         sensorMonitorTask,
-         "Sensors",
-         4096,
-         NULL,
-         1,
-         &sensorMonitorTaskHandle,
-         1
-     );
-     
-     xTaskCreatePinnedToCore(
-         networkTask,
-         "Network",
-         8192,
-         NULL,
-         1,
-         &networkTaskHandle,
-         0
-     );
-     
-     Serial.println("✓ FreeRTOS tasks created");
- }
+void createSystemTasks() {
+    Serial.println("Creating FreeRTOS tasks...");
+    
+    // Print available memory before task creation
+    Serial.printf("Memory available: %d KB heap, %d KB PSRAM\n", 
+                  ESP.getFreeHeap() / 1024, ESP.getFreePsram() / 1024);
+    
+    // Increased stack sizes for stability
+    xTaskCreatePinnedToCore(
+        stateMachineTask,
+        "StateMachine",
+        10240,  // Increased from 8192 to 10KB
+        NULL,
+        2,
+        &stateMachineTaskHandle,
+        1
+    );
+    
+    xTaskCreatePinnedToCore(
+        sensorMonitorTask,
+        "Sensors",
+        4096,
+        NULL,
+        1,
+        &sensorMonitorTaskHandle,
+        1
+    );
+    
+    xTaskCreatePinnedToCore(
+        networkTask,
+        "Network",
+        12288,  // Increased from 8192 to 12KB (needs more for HTTP/JSON)
+        NULL,
+        1,
+        &networkTaskHandle,
+        0
+    );
+    
+    Serial.println("✓ FreeRTOS tasks created");
+    Serial.printf("Memory after tasks: %d KB heap\n", ESP.getFreeHeap() / 1024);
+}
  
  #endif // STATE_MACHINE_H

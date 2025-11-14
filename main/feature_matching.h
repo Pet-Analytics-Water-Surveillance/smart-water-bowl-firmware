@@ -30,18 +30,33 @@ extern String userId;
 extern String householdId;
 extern uint8_t* jpegBuffer;
  
- void initializeStorage() {
-     Serial.println("Initializing LittleFS...");
-     
-     if (!LittleFS.begin(true)) {
-         Serial.println("✗ LittleFS mount failed");
-         return;
-     }
-     
-     size_t totalBytes = LittleFS.totalBytes();
-     size_t usedBytes = LittleFS.usedBytes();
-     Serial.printf("✓ LittleFS mounted: %d / %d bytes used\n", usedBytes, totalBytes);
- }
+void initializeStorage() {
+    Serial.println("Initializing LittleFS...");
+    
+    // Try to mount without formatting first
+    if (!LittleFS.begin(false)) {
+        Serial.println("⚠️  LittleFS mount failed, attempting recovery...");
+        
+        // Try formatting
+        if (!LittleFS.begin(true)) {
+            Serial.println("✗ LittleFS format failed");
+            Serial.println("⚠️  Continuing without storage (reference images will sync from cloud)");
+            return;
+        }
+        
+        Serial.println("✓ LittleFS formatted successfully");
+    }
+    
+    size_t totalBytes = LittleFS.totalBytes();
+    size_t usedBytes = LittleFS.usedBytes();
+    Serial.printf("✓ LittleFS mounted: %d / %d bytes used (%.1f%% full)\n", 
+                  usedBytes, totalBytes, (float)usedBytes / totalBytes * 100);
+    
+    // Check if filesystem is healthy
+    if (usedBytes > totalBytes * 0.95) {
+        Serial.println("⚠️  LittleFS nearly full, consider clearing old data");
+    }
+}
  
  ImageFeatures extractFeatures(uint8_t* imageData, size_t size) {
      ImageFeatures features = {0};
@@ -132,41 +147,85 @@ extern uint8_t* jpegBuffer;
      return bestMatch;
  }
  
- bool downloadAndExtractFeatures(String petId, String petName, String imageUrl) {
-     HTTPClient http;
-     
-     http.begin(imageUrl);
-     http.setTimeout(HTTP_TIMEOUT_MS);
-     
-     int httpCode = http.GET();
-     
-     if (httpCode == 200) {
-         int len = http.getSize();
-         
-         if (len > JPEG_BUFFER_SIZE) {
-             Serial.printf("  ✗ Image too large: %d bytes\n", len);
-             http.end();
-             return false;
-         }
-         
-         WiFiClient* stream = http.getStreamPtr();
-         size_t bytesRead = stream->readBytes(jpegBuffer, len);
-         
-         if (bytesRead == len) {
-             ImageFeatures features = extractFeatures(jpegBuffer, bytesRead);
-             features.petId = petId;
-             features.petName = petName;
-             
-             referenceFeatures.push_back(features);
-             
-             http.end();
-             return true;
-         }
-     }
-     
-     http.end();
-     return false;
- }
+bool downloadAndExtractFeatures(String petId, String petName, String imageUrl) {
+    // Check available memory before download
+    size_t freeHeap = ESP.getFreeHeap();
+    if (freeHeap < 50000) {
+        Serial.printf("  ✗ Low memory: %d bytes free\n", freeHeap);
+        return false;
+    }
+    
+    HTTPClient http;
+    http.begin(imageUrl);
+    http.setTimeout(HTTP_TIMEOUT_MS);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    
+    int httpCode = http.GET();
+    
+    if (httpCode != 200) {
+        Serial.printf("  ✗ HTTP error: %d\n", httpCode);
+        http.end();
+        return false;
+    }
+    
+    int len = http.getSize();
+    
+    // Safety check: ensure size is valid and within bounds
+    if (len <= 0 || len > JPEG_BUFFER_SIZE) {
+        Serial.printf("  ✗ Invalid size: %d bytes (max: %d)\n", len, JPEG_BUFFER_SIZE);
+        http.end();
+        return false;
+    }
+    
+    // Clear buffer before reading
+    memset(jpegBuffer, 0, JPEG_BUFFER_SIZE);
+    
+    WiFiClient* stream = http.getStreamPtr();
+    
+    // Read in chunks to prevent buffer overflow
+    size_t totalRead = 0;
+    size_t chunkSize = 1024;
+    
+    while (totalRead < len && stream->available()) {
+        size_t remaining = len - totalRead;
+        size_t toRead = (remaining < chunkSize) ? remaining : chunkSize;
+        
+        size_t bytesRead = stream->readBytes(jpegBuffer + totalRead, toRead);
+        if (bytesRead == 0) break;
+        
+        totalRead += bytesRead;
+        
+        // Watchdog reset
+        yield();
+    }
+    
+    http.end();
+    
+    if (totalRead != len) {
+        Serial.printf("  ✗ Incomplete download: %d/%d bytes\n", totalRead, len);
+        return false;
+    }
+    
+    // Extract features
+    ImageFeatures features = extractFeatures(jpegBuffer, totalRead);
+    features.petId = petId;
+    features.petName = petName;
+    
+    // Check if we have space in vector
+    if (referenceFeatures.size() >= MAX_PETS * 3) {
+        Serial.println("  ✗ Reference storage full");
+        return false;
+    }
+    
+    referenceFeatures.push_back(features);
+    
+    Serial.printf("  ✓ Loaded (%d bytes, %d KB free)\n", totalRead, freeHeap / 1024);
+    
+    // Small delay to allow memory to settle
+    delay(100);
+    
+    return true;
+}
  
 void syncReferenceImages() {
     Serial.println("\n════════════════════════════════════════");
@@ -178,9 +237,15 @@ void syncReferenceImages() {
         return;
     }
     
+    // Print memory before starting
+    Serial.printf("Memory before sync: %d KB free heap, %d KB free PSRAM\n", 
+                  ESP.getFreeHeap() / 1024, ESP.getFreePsram() / 1024);
+    
     referenceFeatures.clear();
+    referenceFeatures.reserve(MAX_PETS * 3); // Pre-allocate to reduce fragmentation
     
     HTTPClient http;
+    http.setReuse(false); // Prevent connection reuse issues
     
     // First, get all pets in household
     String petsUrl = supabaseUrl + "/rest/v1/pets?household_id=eq." + householdId + 
@@ -203,25 +268,34 @@ void syncReferenceImages() {
     String payload = http.getString();
     http.end();
     
-    DynamicJsonDocument petsDoc(4096);
-    DeserializationError error = deserializeJson(petsDoc, payload);
-    
-    if (error) {
-        Serial.printf("✗ JSON parse error: %s\n", error.c_str());
+    // Use static JSON document allocated on heap with proper size
+    DynamicJsonDocument* petsDoc = new DynamicJsonDocument(8192);
+    if (!petsDoc) {
+        Serial.println("✗ Failed to allocate JSON document");
         return;
     }
     
-    JsonArray pets = petsDoc.as<JsonArray>();
+    DeserializationError error = deserializeJson(*petsDoc, payload);
+    
+    if (error) {
+        Serial.printf("✗ JSON parse error: %s\n", error.c_str());
+        delete petsDoc;
+        return;
+    }
+    
+    JsonArray pets = petsDoc->as<JsonArray>();
     Serial.printf("Found %d pets\n\n", pets.size());
     
     if (pets.size() == 0) {
         Serial.println("⚠️  No pets registered!");
         Serial.println("   Use 'Train AI' in the mobile app to add pet photos.");
         Serial.println("════════════════════════════════════════\n");
+        delete petsDoc;
         return;
     }
     
     int totalPhotos = 0;
+    int failedPhotos = 0;
     
     // For each pet, fetch all training photos
     for (JsonObject pet : pets) {
@@ -229,6 +303,13 @@ void syncReferenceImages() {
         String petName = pet["name"].as<String>();
         
         Serial.printf("📷 %s:\n", petName.c_str());
+        
+        // Check memory before fetching photos
+        size_t freeHeap = ESP.getFreeHeap();
+        if (freeHeap < 40000) {
+            Serial.printf("  ⚠️  Low memory (%d KB), skipping remaining pets\n", freeHeap / 1024);
+            break;
+        }
         
         // Query pet_photos table for all photos of this pet
         String photosUrl = supabaseUrl + "/rest/v1/pet_photos?pet_id=eq." + petId + 
@@ -245,11 +326,17 @@ void syncReferenceImages() {
             String photoPayload = http.getString();
             http.end();
             
-            DynamicJsonDocument photosDoc(4096);
-            DeserializationError photoError = deserializeJson(photosDoc, photoPayload);
+            // Use separate document for photos
+            DynamicJsonDocument* photosDoc = new DynamicJsonDocument(6144);
+            if (!photosDoc) {
+                Serial.println("  ✗ Failed to allocate photos JSON document");
+                continue;
+            }
+            
+            DeserializationError photoError = deserializeJson(*photosDoc, photoPayload);
             
             if (!photoError) {
-                JsonArray photos = photosDoc.as<JsonArray>();
+                JsonArray photos = photosDoc->as<JsonArray>();
                 int photoCount = photos.size();
                 
                 if (photoCount == 0) {
@@ -261,26 +348,41 @@ void syncReferenceImages() {
                         String thumbnailUrl = photo["thumbnail_url"].as<String>();
                         
                         if (thumbnailUrl.length() > 0) {
+                            // Small delay between downloads to prevent overwhelming the system
+                            delay(200);
+                            
                             if (downloadAndExtractFeatures(petId, petName, thumbnailUrl)) {
-                                Serial.printf("    ✓ Photo %d loaded\n", totalPhotos + 1);
                                 totalPhotos++;
                             } else {
-                                Serial.printf("    ✗ Photo failed\n");
+                                failedPhotos++;
                             }
+                            
+                            // Watchdog reset
+                            yield();
                         }
                     }
                 }
+            } else {
+                Serial.printf("  ✗ Photos JSON parse error: %s\n", photoError.c_str());
             }
+            
+            delete photosDoc;
         } else {
             http.end();
             Serial.printf("  ✗ Failed to fetch photos: HTTP %d\n", photoCode);
         }
         
         Serial.println();
+        
+        // Watchdog reset between pets
+        yield();
     }
     
-    Serial.printf("✓ Sync complete: %d reference photos loaded\n", totalPhotos);
-    Serial.printf("  %d unique pets can be recognized\n", pets.size());
+    delete petsDoc;
+    
+    Serial.printf("✓ Sync complete: %d photos loaded, %d failed\n", totalPhotos, failedPhotos);
+    Serial.printf("  %d unique pets can be recognized\n", referenceFeatures.size());
+    Serial.printf("  Memory after sync: %d KB free heap\n", ESP.getFreeHeap() / 1024);
     Serial.println("════════════════════════════════════════\n");
 }
  

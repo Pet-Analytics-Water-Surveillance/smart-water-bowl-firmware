@@ -487,12 +487,28 @@ void startBLEProvisioning() {
     
     // Configure advertising BEFORE starting
     NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
-    pAdvertising->addServiceUUID(SERVICE_UUID);
+    
+    // Build custom advertising data with both name and service UUID
+    NimBLEAdvertisementData advData;
+    advData.setFlags(0x06); // LE General Discoverable, BR/EDR not supported
+    advData.setName(deviceName);
+    advData.setCompleteServices(BLEUUID(SERVICE_UUID));
+    pAdvertising->setAdvertisementData(advData);
+    
+    // Set scan response data (sent when scanner requests more info)
+    NimBLEAdvertisementData scanData;
+    scanData.setName(deviceName);
+    scanData.setCompleteServices(BLEUUID(SERVICE_UUID));
+    pAdvertising->setScanResponseData(scanData);
+    
     pAdvertising->setMinInterval(100);     // 100ms * 0.625 = 62.5ms
     pAdvertising->setMaxInterval(200);     // 200ms * 0.625 = 125ms
-    Serial.println("✓ Advertising configured");
     
-    // Start advertising using NimBLEDevice to ensure server starts
+    Serial.println("✓ Advertising configured");
+    Serial.printf("  Broadcasting name: %s\n", deviceName);
+    Serial.printf("  Broadcasting service UUID: %s\n", SERVICE_UUID);
+    
+    // Start advertising
     NimBLEDevice::startAdvertising();
     Serial.println("✓ BLE advertising started via NimBLEDevice");
     
