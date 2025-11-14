@@ -34,21 +34,31 @@
  
  StateMachineContext sm = {STATE_IDLE, 0, "", 0, 0, {false, 0, {0,0,0,0}, 0}};
  
- // Task handles
- TaskHandle_t stateMachineTaskHandle;
- TaskHandle_t sensorMonitorTaskHandle;
- TaskHandle_t networkTaskHandle;
+// Task handles
+TaskHandle_t stateMachineTaskHandle;
+TaskHandle_t sensorMonitorTaskHandle;
+TaskHandle_t networkTaskHandle;
+
+// Status printing
+unsigned long lastStatusPrint = 0;
  
  // ===== STATE HANDLERS =====
  
- void handleStateIdle() {
-     if (checkPresence()) {
-         Serial.println("\n→ STATE: PRESENCE_DETECTED");
-         sm.currentState = STATE_PRESENCE_DETECTED;
-         sm.stateEntryTime = millis();
-         digitalWrite(STATUS_LED, HIGH);
-     }
- }
+void handleStateIdle() {
+    // Print status every 10 seconds while idle
+    if (millis() - lastStatusPrint > 10000) {
+        Serial.println("💤 Idle - Waiting for motion...");
+        lastStatusPrint = millis();
+    }
+    
+    if (checkPresence()) {
+        Serial.println("\n🚨 MOTION DETECTED!");
+        Serial.println("→ STATE: PRESENCE_DETECTED");
+        sm.currentState = STATE_PRESENCE_DETECTED;
+        sm.stateEntryTime = millis();
+        digitalWrite(STATUS_LED, HIGH);
+    }
+}
  
  void handleStatePresenceDetected() {
      DetectionResult result = detectPet();

@@ -7,14 +7,15 @@
  * - Real-time events pushed to Supabase
  */
 
- #include "config.h"
- #include "ble_provisioning.h"
- #include "wifi_manager.h"
- #include "ai_vision.h"
- #include "feature_matching.h"
- #include "sensors.h"
- #include "supabase_client.h"
- #include "state_machine.h"
+#include "config.h"
+#include "ble_provisioning.h"
+#include "wifi_manager.h"
+#include "ai_vision.h"
+#include "feature_matching.h"
+#include "sensors.h"
+#include "supabase_client.h"
+#include "state_machine.h"
+#include "diagnostics.h"
  
  // Global state
  bool deviceProvisioned = false;
@@ -75,13 +76,17 @@ void setup() {
      // Initialize sensors (RD-03 UART and ultrasonic)
      initializeSensors();
      
-     // Create FreeRTOS tasks for concurrent operation
-     createSystemTasks();
-     
-     digitalWrite(STATUS_LED, LOW);
-     Serial.println("\n✓ System initialized and ready\n");
-     blinkSuccess();
- }
+    // Create FreeRTOS tasks for concurrent operation
+    createSystemTasks();
+    
+    digitalWrite(STATUS_LED, LOW);
+    Serial.println("\n✓ System initialized and ready\n");
+    blinkSuccess();
+    
+    // Run diagnostics after 3 seconds
+    delay(3000);
+    runDiagnostics();
+}
  
  void loop() {
      // All work happens in FreeRTOS tasks

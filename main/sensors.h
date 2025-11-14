@@ -17,6 +17,8 @@ unsigned long lastMotionTime = 0;
 int detectedRange = -1;
 float waterLevelReadings[WATER_READING_SAMPLES] = {0};
 int waterReadIndex = 0;
+bool verboseSensorMode = false;  // Set to true for troubleshooting
+unsigned long lastRadarPrint = 0;
 
 void initializeSensors() {
     Serial.println("Initializing sensors...");
@@ -37,10 +39,24 @@ void initializeSensors() {
 }
 
 bool checkPresence() {
+    // Print "no data" message every 30 seconds if radar is silent
+    if (millis() - lastRadarPrint > 30000 && radarSerial.available() == 0) {
+        Serial.println("⚠️  No data from RD-03 radar in 30 seconds");
+        Serial.println("   Check wiring and power to radar sensor");
+        lastRadarPrint = millis();
+    }
+    
     // Read data from RD-03 radar
     if (radarSerial.available()) {
         String radarData = radarSerial.readStringUntil('\n');
         radarData.trim();
+        
+        lastRadarPrint = millis();  // Reset silence timer
+        
+        // Always print raw data in verbose mode
+        if (verboseSensorMode && radarData.length() > 0) {
+            Serial.printf("[RD-03 RAW] %s\n", radarData.c_str());
+        }
         
         // Parse RD-03 output (typical formats: "Range X" or "None")
         if (radarData.indexOf("Range") >= 0) {
@@ -51,35 +67,26 @@ bool checkPresence() {
             
             lastMotionTime = millis();
             if (!motionDetected) {
-#ifdef DEBUG_SENSORS
-                Serial.printf("[RD-03] Target detected at range %d\n", detectedRange);
-#endif
+                Serial.printf("📡 [RD-03] Target detected at range %d\n", detectedRange);
             }
             motionDetected = true;
         } else if (radarData.indexOf("None") >= 0 || radarData.indexOf("none") >= 0) {
             // No target
             if (motionDetected) {
-#ifdef DEBUG_SENSORS
-                Serial.println("[RD-03] Target cleared");
-#endif
+                Serial.println("📡 [RD-03] Target cleared");
             }
             motionDetected = false;
             detectedRange = -1;
         }
-        
-#ifdef DEBUG_SENSORS
-        Serial.print("[RD-03] Raw: ");
-        Serial.println(radarData);
-#endif
     }
     
     // Timeout check - if no data for 2 seconds, consider no motion
     if (millis() - lastMotionTime > 2000 && motionDetected) {
         motionDetected = false;
         detectedRange = -1;
-#ifdef DEBUG_SENSORS
-        Serial.println("[RD-03] Timeout - no motion");
-#endif
+        if (verboseSensorMode) {
+            Serial.println("[RD-03] Timeout - no motion");
+        }
     }
     
     return motionDetected;
