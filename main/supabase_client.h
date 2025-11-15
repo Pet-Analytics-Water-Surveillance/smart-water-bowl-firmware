@@ -38,7 +38,40 @@ String deviceId = "";
         Serial.println("✓ Supabase client initialized");
         Serial.printf("  User ID: %s\n", userId.c_str());
         Serial.printf("  Household ID: %s\n", householdId.c_str());
-        Serial.printf("  Device ID: %s\n", deviceId.c_str());
+        
+        // Validate Device ID format
+        Serial.println("");
+        Serial.println("════════════════════════════════════════");
+        Serial.println("🔍 DEVICE UUID VALIDATION");
+        Serial.println("════════════════════════════════════════");
+        Serial.printf("  Loaded Device ID: %s\n", deviceId.c_str());
+        
+        // Check if it looks like a UUID (8-4-4-4-12 format with hyphens)
+        bool isValidUUID = (deviceId.length() == 36 && 
+                           deviceId.charAt(8) == '-' && 
+                           deviceId.charAt(13) == '-' && 
+                           deviceId.charAt(18) == '-' && 
+                           deviceId.charAt(23) == '-');
+        
+        if (isValidUUID) {
+            Serial.println("  Status: ✅ VALID UUID FORMAT");
+            Serial.println("  ✓ Compatible with Supabase database");
+            Serial.println("  ✓ Data uploads will work correctly");
+        } else {
+            Serial.println("  Status: ⚠️⚠️⚠️ INVALID UUID FORMAT ⚠️⚠️⚠️");
+            Serial.println("");
+            Serial.println("  ⚠️  Device ID is not a valid UUID!");
+            Serial.println("  ⚠️  Expected format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx");
+            Serial.println("  ⚠️  Current format: NOT UUID (likely fountain_XXXXXX)");
+            Serial.println("");
+            Serial.println("  🚨 CRITICAL: Data uploads will FAIL with HTTP 400!");
+            Serial.println("  🚨 Supabase requires UUID format for device_id column");
+            Serial.println("");
+            Serial.println("  📱 SOLUTION: Re-provision device using updated mobile app");
+            Serial.println("     The app will assign a proper UUID from Supabase");
+        }
+        Serial.println("════════════════════════════════════════");
+        Serial.println("");
     } else {
         Serial.println("✗ Supabase credentials missing");
     }

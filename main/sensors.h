@@ -36,6 +36,7 @@ void initializeSensors() {
     Serial.println("✓ Sensors initialized");
     Serial.println("  - RD-03 Radar on UART1 (115200 baud)");
     Serial.println("  - Ultrasonic sensor ready");
+    Serial.println("  - ⚠️  Low water check DISABLED (testing mode)");
 }
 
 bool checkPresence() {
@@ -168,6 +169,9 @@ int getDetectedRange() {
  }
  
 void checkLowWater() {
+    // TEMPORARILY DISABLED FOR TESTING
+    return;
+    
     float waterLevel = getFilteredWaterLevel();
     
     if (waterLevel > 0 && waterLevel < LOW_WATER_THRESHOLD_CM) {

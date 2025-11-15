@@ -74,6 +74,7 @@ String receivedSupabaseURL = "";
 String receivedSupabaseKey = "";
 String receivedUserID = "";
 String receivedHouseholdID = "";
+String receivedDeviceID = "";  // Device UUID from Supabase
 
 // ===== FORWARD DECLARATIONS =====
 void updateBLEStatus(String status);
@@ -327,10 +328,44 @@ void processUserCredentials(const std::string& value) {
         
         receivedUserID = doc["user_id"].as<String>();
         receivedHouseholdID = doc["household_id"].as<String>();
+        receivedDeviceID = doc["device_id"].as<String>();  // Get device UUID from mobile app
         
-        Serial.println("✅ User ID and Household ID received and parsed!");
+        Serial.println("✅ User ID, Household ID, and Device ID received!");
         Serial.printf("  User ID: %s\n", receivedUserID.c_str());
         Serial.printf("  Household ID: %s\n", receivedHouseholdID.c_str());
+        
+        // Validate Device ID (should be UUID format)
+        Serial.println("");
+        Serial.println("════════════════════════════════════════");
+        if (receivedDeviceID.length() > 0) {
+            // Check if it looks like a UUID (8-4-4-4-12 format with hyphens)
+            bool isValidUUID = (receivedDeviceID.length() == 36 && 
+                               receivedDeviceID.charAt(8) == '-' && 
+                               receivedDeviceID.charAt(13) == '-' && 
+                               receivedDeviceID.charAt(18) == '-' && 
+                               receivedDeviceID.charAt(23) == '-');
+            
+            if (isValidUUID) {
+                Serial.println("✅✅✅ DEVICE UUID RECEIVED ✅✅✅");
+                Serial.printf("  Device ID: %s\n", receivedDeviceID.c_str());
+                Serial.println("  Format: VALID UUID (compatible with Supabase)");
+                Serial.println("════════════════════════════════════════");
+            } else {
+                Serial.println("⚠️⚠️⚠️ INVALID DEVICE ID FORMAT ⚠️⚠️⚠️");
+                Serial.printf("  Device ID: %s\n", receivedDeviceID.c_str());
+                Serial.println("  Expected: UUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)");
+                Serial.println("  ⚠️  THIS WILL CAUSE SUPABASE UPLOAD ERRORS!");
+                Serial.println("════════════════════════════════════════");
+            }
+        } else {
+            Serial.println("⚠️⚠️⚠️ NO DEVICE UUID PROVIDED ⚠️⚠️⚠️");
+            Serial.println("  Mobile app did not send device_id!");
+            Serial.println("  Will fallback to MAC-based ID (NOT compatible with Supabase UUID column)");
+            Serial.println("  ⚠️  EXPECT HTTP 400 ERRORS ON DATA UPLOAD!");
+            Serial.println("════════════════════════════════════════");
+        }
+        Serial.println("");
+        
         updateBLEStatus("user_received");
         
         // Save all credentials to flash
@@ -358,20 +393,41 @@ void processUserCredentials(const std::string& value) {
      prefs.putString("anon_key", receivedSupabaseKey);
      prefs.end();
      
-    // Save user ID and household ID
+    // Save user ID, household ID, and device UUID
     prefs.begin("device", false);
     prefs.putString("user_id", receivedUserID);
     prefs.putString("household_id", receivedHouseholdID);
     
-    // Generate device ID from MAC if not exists
-    if (!prefs.isKey("id")) {
+    Serial.println("");
+    Serial.println("════════════════════════════════════════");
+    Serial.println("💾 SAVING DEVICE CREDENTIALS");
+    Serial.println("════════════════════════════════════════");
+    
+    // Save device UUID from mobile app (not generated from MAC)
+    if (receivedDeviceID.length() > 0) {
+        prefs.putString("id", receivedDeviceID);
+        Serial.println("✅ Device UUID saved successfully!");
+        Serial.printf("  Stored UUID: %s\n", receivedDeviceID.c_str());
+        Serial.println("  Source: Mobile app (Supabase database)");
+        Serial.println("  ✓ Compatible with Supabase UUID columns");
+    } else {
+        // Fallback: Generate device ID from MAC if not provided (for backward compatibility)
+        Serial.println("⚠️⚠️⚠️ FALLBACK MODE ACTIVATED ⚠️⚠️⚠️");
+        Serial.println("  No device_id provided by mobile app");
+        Serial.println("  Generating ID from MAC address...");
         uint8_t mac[6];
         WiFi.macAddress(mac);
         char idBuf[32];
         snprintf(idBuf, sizeof(idBuf), "fountain_%02X%02X%02X", 
                  mac[3], mac[4], mac[5]);
         prefs.putString("id", String(idBuf));
+        Serial.printf("  Generated ID: %s\n", idBuf);
+        Serial.println("  ⚠️  WARNING: This is NOT a valid UUID!");
+        Serial.println("  ⚠️  Supabase will reject data uploads with HTTP 400!");
+        Serial.println("  ⚠️  Please re-provision device with updated mobile app!");
     }
+    Serial.println("════════════════════════════════════════");
+    Serial.println("");
     
     prefs.end();
      

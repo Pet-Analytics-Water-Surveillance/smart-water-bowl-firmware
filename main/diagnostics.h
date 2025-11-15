@@ -90,23 +90,52 @@ void runDiagnostics() {
     
     // 5. AI Vision Test
     Serial.println("5️⃣  AI Vision Test:");
-    DetectionResult result = detectPet();
-    if (result.detected) {
-        Serial.printf("   ✓ Pet detected! Confidence: %d%%\n", result.confidence);
-        Serial.printf("   BBox: [%d, %d, %d, %d]\n", 
-                     result.bbox[0], result.bbox[1], result.bbox[2], result.bbox[3]);
+    Serial.println("   Testing detection 5 times...");
+    
+    int detectionCount = 0;
+    int totalConfidence = 0;
+    
+    for (int i = 0; i < 5; i++) {
+        DetectionResult result = detectPet();
+        if (result.detected) {
+            detectionCount++;
+            totalConfidence += result.confidence;
+            Serial.printf("   Attempt %d: ✓ Detected! Confidence: %d%%\n", i+1, result.confidence);
+            Serial.printf("            BBox: [%d, %d, %d, %d]\n", 
+                         result.bbox[0], result.bbox[1], result.bbox[2], result.bbox[3]);
+        } else {
+            Serial.printf("   Attempt %d: ✗ Nothing detected\n", i+1);
+        }
+        delay(500);
+    }
+    
+    if (detectionCount > 0) {
+        Serial.printf("   ✓ AI working! Detection rate: %d/5 (avg confidence: %d%%)\n", 
+                     detectionCount, totalConfidence / detectionCount);
+        Serial.printf("   Threshold: %d%% (detections must be above this)\n", CONFIDENCE_THRESHOLD);
     } else {
-        Serial.println("   ℹ️  No pet in view (this is normal if no pet present)");
+        Serial.println("   ⚠️  No detections - check:");
+        Serial.println("      - Camera has power");
+        Serial.println("      - Object is in frame");
+        Serial.println("      - Lighting is adequate");
+        Serial.printf("      - Current threshold: %d%% (lower = more sensitive)\n", CONFIDENCE_THRESHOLD);
     }
     Serial.println();
     
-    // 6. Reference Photos
-    Serial.println("6️⃣  Training Data:");
-    Serial.printf("   Loaded photos: %d\n", referenceFeatures.size());
-    if (referenceFeatures.size() > 0) {
-        Serial.println("   ✓ AI can identify pets");
+    // 6. Pet Recognition Mode
+    Serial.println("6️⃣  Pet Recognition:");
+    if (singlePetMode) {
+        Serial.println("   🎯 SINGLE PET MODE ACTIVE");
+        Serial.printf("   Pet: %s\n", singlePetName.c_str());
+        Serial.println("   ✓ AI detection DISABLED (power optimized)");
+        Serial.println("   ✓ All drinking events logged to this pet");
     } else {
-        Serial.println("   ⚠️  No training data - use 'Train AI' in mobile app");
+        Serial.printf("   Multi-pet mode: %d photos loaded\n", referenceFeatures.size());
+        if (referenceFeatures.size() > 0) {
+            Serial.println("   ✓ AI can identify multiple pets");
+        } else {
+            Serial.println("   ⚠️  No training data - use 'Train AI' in mobile app");
+        }
     }
     Serial.println();
     

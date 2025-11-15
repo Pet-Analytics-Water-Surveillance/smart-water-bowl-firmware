@@ -20,8 +20,13 @@
      String petName;
  };
  
- // Global reference features
- std::vector<ImageFeatures> referenceFeatures;
+// Global reference features
+std::vector<ImageFeatures> referenceFeatures;
+
+// Single pet mode optimization
+bool singlePetMode = false;
+String singlePetId = "";
+String singlePetName = "";
  
 // External variables
 extern String supabaseUrl;
@@ -304,14 +309,30 @@ void syncReferenceImages() {
     }
     
     JsonArray pets = petsDoc->as<JsonArray>();
-    Serial.printf("Found %d pets\n\n", pets.size());
+    Serial.printf("Found %d pets\n", pets.size());
     
     if (pets.size() == 0) {
         Serial.println("⚠️  No pets registered!");
         Serial.println("   Use 'Train AI' in the mobile app to add pet photos.");
         Serial.println("════════════════════════════════════════\n");
         delete petsDoc;
+        singlePetMode = false;
         return;
+    }
+    
+    // Check for single pet mode optimization
+    if (pets.size() == 1) {
+        singlePetMode = true;
+        singlePetId = pets[0]["id"].as<String>();
+        singlePetName = pets[0]["name"].as<String>();
+        Serial.println("\n🎯 SINGLE PET MODE ENABLED!");
+        Serial.printf("   Only one pet registered: %s\n", singlePetName.c_str());
+        Serial.println("   ✓ Skipping AI detection & feature matching");
+        Serial.println("   ✓ All events will be logged to this pet");
+        Serial.println("   ✓ Power consumption optimized\n");
+    } else {
+        singlePetMode = false;
+        Serial.println();
     }
     
     int totalPhotos = 0;
@@ -400,10 +421,27 @@ void syncReferenceImages() {
     
     delete petsDoc;
     
-    Serial.printf("✓ Sync complete: %d photos loaded, %d failed\n", totalPhotos, failedPhotos);
-    Serial.printf("  %d unique pets can be recognized\n", referenceFeatures.size());
+    if (singlePetMode) {
+        Serial.println("✓ Single pet mode active - no photos needed");
+    } else {
+        Serial.printf("✓ Sync complete: %d photos loaded, %d failed\n", totalPhotos, failedPhotos);
+        Serial.printf("  %d unique pets can be recognized\n", referenceFeatures.size());
+    }
     Serial.printf("  Memory after sync: %d KB free heap\n", ESP.getFreeHeap() / 1024);
     Serial.println("════════════════════════════════════════\n");
+}
+
+// Get the single pet's ID (for single pet mode)
+String getSinglePetId() {
+    if (singlePetMode) {
+        return singlePetId;
+    }
+    return "";
+}
+
+// Check if system is in single pet mode
+bool isSinglePetMode() {
+    return singlePetMode;
 }
  
  #endif // FEATURE_MATCHING_H
