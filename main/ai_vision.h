@@ -45,7 +45,7 @@ void initializeAIVision() {
     // Initialize I2C FIRST - before allocating memory
     Serial.println("[INIT] Initializing I2C bus...");
     Wire.begin(I2C_SDA, I2C_SCL);
-    Wire.setClock(100000);
+    Wire.setClock(400000); // Fast Mode (400kHz)
     delay(500);  // Give I2C time to stabilize
     Serial.println("  ✓ I2C bus ready");
     

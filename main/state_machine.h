@@ -79,7 +79,24 @@ void handleStateIdle() {
  }
  
  void handleStatePetDetection() {
-     DetectionResult result = detectPetWithImage();
+     // CRITICAL: Suspend sensor task during heavy I2C transfer
+     // The ultrasonic sensor (PulseIn) disables interrupts/blocks, which kills I2C
+     if (sensorMonitorTaskHandle != NULL) {
+         vTaskSuspend(sensorMonitorTaskHandle);
+     }
+     
+     // Retry mechanism for robustness
+     DetectionResult result;
+     for (int i = 0; i < 3; i++) {
+         result = detectPetWithImage();
+         if (result.detected && result.imageSize > 0) break;
+         delay(50); // Small backoff
+     }
+     
+     // Resume sensor monitoring
+     if (sensorMonitorTaskHandle != NULL) {
+         vTaskResume(sensorMonitorTaskHandle);
+     }
      
      if (result.detected && result.imageSize > 0) {
          Serial.println("→ STATE: FEATURE_MATCHING");
